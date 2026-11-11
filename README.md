@@ -8,7 +8,7 @@ apurar a **ajuda de custo voluntária e indenizatória** (alimentação e transp
 
 | Requisito | Onde está |
 |---|---|
-| RF01 – Cadastro de profissionais (nome, CPF validado, telefone, categoria Fixo ou Cobertura/Standby, modalidade Integral ou Apenas Transporte com aceite prévio) | aba **Profissionais** |
+| RF01 – Cadastro de profissionais (nome completo, chave Pix, COREN opcional, categoria Fixo ou Cobertura/Standby, modalidade Integral ou Apenas Transporte com aceite prévio) | aba **Profissionais** |
 | RF02 – Registro manual de plantões (diurno/noturno, 12h), vários dias de uma vez pelo calendário, e importação de planilha CSV | aba **Plantões** |
 | RF03 – Cálculo automático: regra do 4º plantão fixo, retroativo do 1º ao 3º, R$ 30,00 ou R$ 10,00 por plantão; cobertura não conta | `js/calc.js` |
 | RF04 – Extrato mensal detalhado por profissional | aba **Extratos** |
@@ -21,6 +21,26 @@ apurar a **ajuda de custo voluntária e indenizatória** (alimentação e transp
 Extras: marcar repasse como pago (data e forma), alerta de atraso, resumo do mês em PDF, envio do extrato
 por WhatsApp, backup/restauração e instalação como aplicativo no celular (PWA, funciona sem internet).
 
+## Configuração única (uma família)
+
+Esta instalação é de uso exclusivo de uma família. No **primeiro acesso** o app pede, uma única vez:
+nome da família, nome do paciente, cidade e a senha. Depois disso
+tudo pode ser ajustado em **Ajustes**, sem novo deploy.
+
+Se quiser deixar esses dados já preenchidos no primeiro acesso, edite `js/config.js`
+(também é ali que ficam os valores padrão de R$ 20,00 de alimentação e R$ 10,00 de transporte).
+
+## Editar textos sem novo deploy
+
+Em **Ajustes → Textos e termos** a família pode editar: o termo de ciência inicial, o termo do profissional,
+o aceite da opção “Apenas Transporte”, o recibo, a declaração do extrato e o rodapé do WhatsApp.
+
+- `**texto**` deixa em negrito; uma linha em branco começa novo parágrafo; linhas com `1.` ou `-` viram lista.
+- Campos como `{profissional}`, `{pix}`, `{coren}`, `{valor}`, `{valor_extenso}`, `{mes}`, `{familia}` são preenchidos
+  automaticamente (toque no campo para inseri-lo).
+- Há pré-visualização com dados de exemplo e o botão **Restaurar padrão**.
+- Os textos editados ficam salvos junto com os dados (e vão no backup).
+
 ## Como os dados são guardados (importante)
 
 - **Não há servidor nem banco de dados.** Os dados ficam no navegador do aparelho, **criptografados
@@ -28,7 +48,7 @@ por WhatsApp, backup/restauração e instalação como aplicativo no celular (PW
 - Cada aparelho tem a sua própria cópia. Para usar em outro celular, faça **Ajustes → Exportar backup**
   e, no outro aparelho, escolha o arquivo em “Restaurar a partir de um backup” no primeiro acesso.
 - Faça backup com frequência: limpar os dados do navegador apaga o sistema daquele aparelho.
-  O arquivo de backup **não é criptografado** (contém CPFs) — guarde-o com cuidado.
+  O arquivo de backup **não é criptografado** (contém nomes e chaves Pix) — guarde-o com cuidado.
 
 ## Publicar na Vercel
 
@@ -52,10 +72,10 @@ Salve a planilha como **CSV** com as colunas `Data;Turno;Profissional;Tipo` (Tip
 ```
 Data;Turno;Profissional;Tipo
 03/09/2026;Diurno;Maria Souza;Fixo
-05/09/2026;Noturno;123.456.789-09;
+05/09/2026;Noturno;Maria Souza;
 ```
 
-“Profissional” pode ser o nome exatamente como cadastrado ou o CPF.
+“Profissional” deve ser o nome completo como cadastrado (maiúsculas, acentos e espaços extras são ignorados).
 
 ## Desenvolvimento
 
@@ -72,9 +92,10 @@ Estrutura:
 index.html            página única
 css/style.css         layout responsivo (mobile-first) e layout de impressão/PDF
 js/app.js             telas e interações
-js/calc.js            regras de negócio (elegibilidade, retroativo, 5º dia útil, extenso, CPF, CSV)
+js/calc.js            regras de negócio (elegibilidade, retroativo, 5º dia útil, extenso, CSV)
 js/store.js           armazenamento local criptografado
-js/textos.js          termos e textos de recibo
+js/textos.js          textos padrão dos termos/recibos e o formatador dos textos editáveis
+js/config.js          parâmetros da família usados no primeiro acesso
 sw.js                 funcionamento offline
 vercel.json           cabeçalhos de segurança
 tests/                testes automatizados

@@ -1,12 +1,14 @@
 import {
   MESES, VALORES_PADRAO, LIMIAR_ELEGIBILIDADE, fmtBRL, valorUnitario, hojeISO, fmtData, diaSemana,
   mesDe, somarMeses, mesAnterior, nomeMes, diasDoMes, parseISO, toISO, quintoDiaUtil, calcularExtrato,
-  compararPlantoes, round2, cpfValido, fmtCPF, fmtTelefone, soDigitos, parseCSV, interpretarImportacao,
+  compararPlantoes, round2, semAcento, parseCSV, interpretarImportacao,
 } from './calc.js';
 import * as store from './store.js';
 import {
-  termoFamilia, termoProfissional, textoOpcaoTransporte, textoRecibo, DECLARACAO_EXTRATO,
+  termoFamilia, termoProfissional, textoOpcaoTransporte, textoRecibo, declaracaoExtrato, rodapeWhatsapp,
+  TEXTOS_PADRAO, CAMPOS, obterTexto, textoPersonalizado, montarCampos, renderTexto, camposDesconhecidos,
 } from './textos.js';
+import { CONFIG_PADRAO } from './config.js';
 
 // ======================================================================
 // Estado
@@ -28,10 +30,11 @@ function dadosNovos(cfg = {}) {
   return {
     versao: 1,
     config: {
-      familia: cfg.familia || '',
-      cidade: cfg.cidade || '',
-      empresa: cfg.empresa || '',
-      valores: { ...VALORES_PADRAO },
+      familia: cfg.familia ?? CONFIG_PADRAO.familia,
+      paciente: cfg.paciente ?? CONFIG_PADRAO.paciente,
+      cidade: cfg.cidade ?? CONFIG_PADRAO.cidade,
+      valores: { ...VALORES_PADRAO, ...CONFIG_PADRAO.valores },
+      textos: {},
       termoFamiliaAceitoEm: new Date().toISOString(),
     },
     profissionais: [],
@@ -45,6 +48,8 @@ function normalizar(d) {
   const out = { ...base, ...d };
   out.config = { ...base.config, ...(d.config || {}) };
   out.config.valores = { ...VALORES_PADRAO, ...(out.config.valores || {}) };
+  out.config.textos = out.config.textos && typeof out.config.textos === 'object' ? out.config.textos : {};
+  delete out.config.empresa; // campo removido
   out.profissionais = Array.isArray(d.profissionais) ? d.profissionais : [];
   out.plantoes = Array.isArray(d.plantoes) ? d.plantoes : [];
   out.repasses = d.repasses && typeof d.repasses === 'object' ? d.repasses : {};
@@ -171,15 +176,17 @@ function telaConfiguracao() {
         <h1>Apoio Voluntário</h1><p>Ajuda de Custo Indenizatória · Registro de Plantões</p></div></div>
       <h2>Primeiro acesso</h2>
       <form id="f-config" class="form">
-        <label>Nome da Família Colaboradora <input name="familia" required maxlength="80" placeholder="Ex.: Família Silva"></label>
-        <label>Cidade (para os recibos) <input name="cidade" maxlength="60" placeholder="Ex.: São Paulo/SP"></label>
+        <p class="dica">Configuração única desta instalação. Tudo pode ser ajustado depois em <strong>Ajustes</strong>.</p>
+        <label>Nome da Família Colaboradora <input name="familia" required maxlength="80" placeholder="Ex.: Família Silva" value="${esc(CONFIG_PADRAO.familia)}"></label>
+        <label>Nome do paciente <input name="paciente" maxlength="80" placeholder="Ex.: Sr. José da Silva" value="${esc(CONFIG_PADRAO.paciente)}"></label>
+        <label>Cidade (para os recibos) <input name="cidade" maxlength="60" placeholder="Ex.: São Paulo/SP" value="${esc(CONFIG_PADRAO.cidade)}"></label>
         <label>Crie uma senha <input name="senha" type="password" required minlength="6" autocomplete="new-password"></label>
         <label>Repita a senha <input name="senha2" type="password" required minlength="6" autocomplete="new-password"></label>
         <p class="aviso">Guarde bem a senha: os dados ficam <strong>criptografados neste aparelho</strong> e
         <strong>não há como recuperá-la</strong>. Use “Ajustes → Backup” regularmente.</p>
         <details class="termo-box" open>
           <summary>Termo de Ciência Inicial</summary>
-          ${termoFamilia({ empresa: '' })}
+          <div id="termo-inicial"></div>
         </details>
         <label class="check"><input type="checkbox" name="aceite" required>
           <span>Li e concordo com o Termo de Ciência: este sistema registra apenas o apoio voluntário e indenizatório da família.</span></label>
@@ -189,6 +196,15 @@ function telaConfiguracao() {
     </div>
   </main>`;
   const f = document.getElementById('f-config');
+  const cfgDoForm = () => ({
+    familia: f.familia.value.trim(), paciente: f.paciente.value.trim(),
+    cidade: f.cidade.value.trim(),
+  });
+  const atualizarTermo = () => {
+    document.getElementById('termo-inicial').innerHTML = termoFamilia({ ...cfgDoForm(), valores: CONFIG_PADRAO.valores });
+  };
+  f.addEventListener('input', atualizarTermo);
+  atualizarTermo();
   f.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (f.senha.value !== f.senha2.value) return toast('As senhas não conferem.', 'erro');
@@ -196,12 +212,11 @@ function telaConfiguracao() {
     btn.disabled = true;
     btn.textContent = 'Protegendo dados…';
     try {
-      let dados = dadosNovos({ familia: f.familia.value.trim(), cidade: f.cidade.value.trim() });
+      let dados = dadosNovos(cfgDoForm());
       const arq = f.backup.files[0];
       if (arq) {
         dados = normalizar(JSON.parse(await arq.text()));
-        if (f.familia.value.trim()) dados.config.familia = f.familia.value.trim();
-        if (f.cidade.value.trim()) dados.config.cidade = f.cidade.value.trim();
+        for (const [k, v] of Object.entries(cfgDoForm())) if (v) dados.config[k] = v;
         dados.config.termoFamiliaAceitoEm = new Date().toISOString();
       }
       await store.criarCofre(f.senha.value, dados);
@@ -356,8 +371,12 @@ const ACOES = {
   'pdf-mes'() { imprimir(docRelatorioMes(ui.mes), `Resumo de Repasses - ${ui.mes}`); },
   whatsapp() {
     const ext = calcularExtrato(prof(ui.extratoProf), D.plantoes, ui.mes);
-    const tel = soDigitos(ext.profissional.telefone);
-    window.open(`https://wa.me/${tel ? '55' + tel : ''}?text=${encodeURIComponent(textoWhatsApp(ext))}`, '_blank', 'noopener');
+    window.open(`https://wa.me/?text=${encodeURIComponent(textoWhatsApp(ext))}`, '_blank', 'noopener');
+  },
+  async 'copiar-pix'() {
+    const pix = prof(ui.extratoProf)?.pix || '';
+    try { await navigator.clipboard.writeText(pix); toast('Chave Pix copiada.'); }
+    catch { prompt('Copie a chave Pix:', pix); }
   },
   'registrar-repasse'() { formRepasse(calcularExtrato(prof(ui.extratoProf), D.plantoes, ui.mes)); },
   'desfazer-repasse'() {
@@ -368,6 +387,7 @@ const ACOES = {
   },
   'filtro-prof'(el) { ui.filtroProf = el.value; render(); },
   'exportar'() { exportarBackup(); },
+  'editar-texto'(el) { formTexto(el.dataset.chave); },
   'ver-termo-familia'() { modal('Termo de Ciência Inicial', `<div class="termo-box">${termoFamilia(D.config)}</div>
     <p class="dica">Aceito em ${new Date(D.config.termoFamiliaAceitoEm).toLocaleString('pt-BR')}.</p>`); },
 };
@@ -665,9 +685,9 @@ function formImportacao() {
       <p>Use um arquivo <strong>CSV</strong> (no Excel/Google Planilhas: “Salvar como → CSV”) com as colunas:</p>
       <pre class="exemplo">Data;Turno;Profissional;Tipo
 03/09/2026;Diurno;Maria Souza;Fixo
-05/09/2026;Noturno;123.456.789-09;
+05/09/2026;Noturno;Maria Souza;
 08/09/2026;Diurno;João Lima;Cobertura</pre>
-      <p class="dica">Profissional pode ser o nome (igual ao cadastro) ou o CPF. A coluna Tipo é opcional.</p>
+      <p class="dica">Profissional deve ser o nome completo, igual ao cadastro. A coluna Tipo é opcional.</p>
       <label>Arquivo <input type="file" id="imp-arq" accept=".csv,.txt,text/csv"></label>
       <label>…ou cole o conteúdo aqui <textarea id="imp-txt" rows="5"></textarea></label>
       <button type="button" class="btn sec" id="imp-analisar">Analisar</button>
@@ -731,7 +751,7 @@ function pgProfissionais() {
         <span>${chip(NOME_CATEGORIA[p.categoria], p.categoria === 'fixo' ? 'info' : 'neutro')}
           ${p.categoria === 'fixo' ? chip(`${NOME_MODALIDADE[p.modalidade]} · ${fmtBRL(valorUnitario(p.modalidade, D.config.valores))}`) : chip('Somente refeições', 'neutro')}
           ${p.termoAceitoEm ? '' : chip('Termo pendente', 'alerta')}</span>
-        <span class="dica">CPF ${fmtCPF(p.cpf)}${p.telefone ? ` · <a href="tel:+55${soDigitos(p.telefone)}">${fmtTelefone(p.telefone)}</a>` : ''}</span>
+        <span class="dica">${p.pix ? `Pix: ${esc(p.pix)}` : 'Chave Pix não informada'}${p.coren ? ` · COREN ${esc(p.coren)}` : ''}</span>
       </div>
       <div class="item-acoes">
         <button type="button" class="btn-icone" data-act="termo-prof" data-id="${p.id}" aria-label="Termo de ciência (PDF)" title="Termo (PDF)">📄</button>
@@ -752,8 +772,8 @@ function formProfissional(p) {
   const corpo = `
     <form class="form" id="f-prof">
       <label>Nome completo <input name="nome" required maxlength="100" value="${esc(p0.nome || '')}"></label>
-      <label>CPF <input name="cpf" required inputmode="numeric" maxlength="14" placeholder="000.000.000-00" value="${p0.cpf ? fmtCPF(p0.cpf) : ''}"></label>
-      <label>Telefone (WhatsApp) <input name="telefone" required inputmode="tel" maxlength="15" placeholder="(11) 90000-0000" value="${p0.telefone ? fmtTelefone(p0.telefone) : ''}"></label>
+      <label>Chave Pix <input name="pix" required maxlength="120" autocomplete="off" autocapitalize="off" placeholder="CPF, celular, e-mail ou chave aleatória" value="${esc(p0.pix || '')}"></label>
+      <label>COREN <small>(opcional)</small> <input name="coren" maxlength="30" autocapitalize="characters" placeholder="Ex.: COREN-SP 123456-TE" value="${esc(p0.coren || '')}"></label>
       <fieldset class="segmentado"><legend>Categoria</legend>
         ${radio('categoria', 'fixo', 'Fixo', p0.categoria)}${radio('categoria', 'cobertura', 'Cobertura / Standby', p0.categoria)}</fieldset>
       <fieldset class="segmentado" id="grp-mod"><legend>Modalidade da ajuda de custo</legend>
@@ -779,8 +799,6 @@ function formProfissional(p) {
   modal(novo ? 'Cadastrar profissional' : 'Editar profissional', corpo, (el, fechar) => {
     const f = el.querySelector('form');
     const valorRadio = (n) => f.querySelector(`input[name=${n}]:checked`)?.value;
-    f.cpf.addEventListener('input', () => { f.cpf.value = fmtCPF(f.cpf.value); });
-    f.telefone.addEventListener('input', () => { f.telefone.value = fmtTelefone(f.telefone.value); });
 
     function sync() {
       const cat = valorRadio('categoria');
@@ -792,8 +810,8 @@ function formProfissional(p) {
       const precisaOpcao = cat === 'fixo' && mod === 'transporte' && !(p0.modalidade === 'transporte' && p0.opcaoTransporteEm);
       el.querySelector('#box-opcao').hidden = !precisaOpcao;
       f.opcao.required = precisaOpcao;
-      el.querySelector('#txt-opcao').innerHTML = 'Aceite prévio: ' + textoOpcaoTransporte({ nome: f.nome.value.trim() });
-      el.querySelector('#termo-prof').innerHTML = termoProfissional(D.config, { nome: f.nome.value.trim(), cpf: f.cpf.value });
+      el.querySelector('#txt-opcao').innerHTML = 'Aceite prévio: ' + textoOpcaoTransporte(D.config, { nome: f.nome.value.trim() });
+      el.querySelector('#termo-prof').innerHTML = termoProfissional(D.config, { nome: f.nome.value.trim(), pix: f.pix.value.trim(), coren: f.coren.value.trim() });
     }
     f.addEventListener('input', sync);
     f.addEventListener('change', sync);
@@ -814,19 +832,19 @@ function formProfissional(p) {
     f.addEventListener('submit', (e) => {
       e.preventDefault();
       const nome = f.nome.value.trim().replace(/\s+/g, ' ');
-      const cpf = soDigitos(f.cpf.value);
-      const telefone = soDigitos(f.telefone.value);
+      const pix = f.pix.value.trim();
+      const coren = f.coren.value.trim().toUpperCase();
       const categoria = valorRadio('categoria');
       const modalidade = categoria === 'fixo' ? valorRadio('modalidade') : null;
-      if (!cpfValido(cpf)) return toast('CPF inválido. Confira os números.', 'erro');
-      if (D.profissionais.some((x) => x.id !== p?.id && x.cpf === cpf)) return toast('Já existe profissional com este CPF.', 'erro');
-      if (telefone.length < 10) return toast('Telefone incompleto (inclua o DDD).', 'erro');
+      if (nome.split(' ').length < 2) return toast('Informe o nome completo.', 'erro');
+      if (!pix) return toast('Informe a chave Pix.', 'erro');
+      if (D.profissionais.some((x) => x.id !== p?.id && semAcento(x.nome) === semAcento(nome))) return toast('Já existe profissional com este nome.', 'erro');
       if (!p0.termoAceitoEm && !f.termo.checked) return toast('É necessário registrar a ciência do termo.', 'erro');
       if (f.opcao.required && !f.opcao.checked) return toast('Registre o aceite da opção “Apenas Transporte”.', 'erro');
 
       const agora = new Date().toISOString();
       const dados = {
-        nome, cpf, telefone, categoria, modalidade,
+        nome, pix, coren, categoria, modalidade,
         termoAceitoEm: p0.termoAceitoEm || agora,
         opcaoTransporteEm: modalidade === 'transporte' ? (f.opcao.required ? agora : p0.opcaoTransporteEm) : null,
         ativo: novo ? true : f.ativo.checked,
@@ -886,7 +904,9 @@ function pgExtratoDetalhe() {
   return `
     <button type="button" class="link voltar" data-act="voltar-extratos">‹ Todos os extratos</button>
     <h1>${esc(p.nome)}</h1>
-    <p class="dica">${NOME_CATEGORIA[p.categoria]} · Modalidade: ${modal_}</p>
+    <p class="dica">${NOME_CATEGORIA[p.categoria]} · Modalidade: ${modal_}${p.coren ? ` · COREN ${esc(p.coren)}` : ''}</p>
+    ${p.pix ? `<div class="pix-linha"><span>Chave Pix: <strong>${esc(p.pix)}</strong></span>
+      <button type="button" class="btn sec pequeno" data-act="copiar-pix">Copiar</button></div>` : ''}
     ${seletorMes()}
 
     <section class="cartao">
@@ -964,7 +984,7 @@ function textoWhatsApp(ext) {
     `*Valor total do repasse: ${fmtBRL(ext.total)}*`,
     st.pago ? `Repassado em ${fmtData(st.r.pagoEm)} (${st.r.forma})` : `Data limite: ${fmtData(ext.dataLimite)}`,
     '',
-    '_Ajuda de custo voluntária e indenizatória (alimentação/transporte), sem natureza salarial._',
+    rodapeWhatsapp(D.config, ext.profissional, ext),
   ].filter((x) => x !== null).join('\n');
 }
 
@@ -979,8 +999,8 @@ function pgAjustes() {
       <h2>Família Colaboradora</h2>
       <form class="form" id="f-familia">
         <label>Nome da família <input name="familia" maxlength="80" value="${esc(c.familia)}"></label>
+        <label>Nome do paciente <input name="paciente" maxlength="80" value="${esc(c.paciente)}"></label>
         <label>Cidade (recibos) <input name="cidade" maxlength="60" value="${esc(c.cidade)}"></label>
-        <label>Empresa prestadora de serviços <small>(opcional, citada nos termos)</small> <input name="empresa" maxlength="80" value="${esc(c.empresa)}"></label>
         <button class="btn">Salvar</button>
       </form>
     </section>
@@ -999,6 +1019,16 @@ function pgAjustes() {
     </section>
 
     <section class="cartao">
+      <h2>Textos e termos</h2>
+      <p class="dica">Edite aqui os textos dos termos, recibos e mensagens. As alterações valem na hora, sem novo deploy.</p>
+      <ul class="lista">${Object.entries(TEXTOS_PADRAO).map(([k, t]) => `
+        <li class="item clicavel" data-act="editar-texto" data-chave="${k}">
+          <div class="item-info"><strong>${esc(t.titulo)}</strong><span class="dica">${esc(t.onde)}</span></div>
+          <div class="item-dir">${textoPersonalizado(c, k) ? chip('Personalizado', 'info') : chip('Padrão', 'neutro')}</div>
+        </li>`).join('')}</ul>
+    </section>
+
+    <section class="cartao">
       <h2>Segurança</h2>
       <form class="form" id="f-senha">
         <label>Senha atual <input name="atual" type="password" required autocomplete="current-password"></label>
@@ -1011,7 +1041,7 @@ function pgAjustes() {
     <section class="cartao">
       <h2>Backup dos dados</h2>
       <p class="dica">Os dados ficam somente neste aparelho/navegador. Exporte um backup com frequência e use-o
-      para levar os dados a outro celular ou computador. O arquivo contém CPFs: guarde-o com cuidado.</p>
+      para levar os dados a outro celular ou computador. O arquivo contém nomes e chaves Pix: guarde-o com cuidado.</p>
       <div class="barra-acoes">
         <button type="button" class="btn sec" data-act="exportar">Exportar backup</button>
         <label class="btn sec arquivo">Restaurar backup<input type="file" accept=".json,application/json" data-act-change="importar-backup" hidden></label>
@@ -1036,7 +1066,10 @@ document.addEventListener('submit', async (e) => {
   if (!D || !['f-familia', 'f-valores', 'f-senha'].includes(f.id)) return;
   e.preventDefault();
   if (f.id === 'f-familia') {
-    Object.assign(D.config, { familia: f.familia.value.trim(), cidade: f.cidade.value.trim(), empresa: f.empresa.value.trim() });
+    Object.assign(D.config, {
+      familia: f.familia.value.trim(), paciente: f.paciente.value.trim(),
+      cidade: f.cidade.value.trim(),
+    });
     persistir();
     render();
     toast('Dados da família salvos.');
@@ -1079,6 +1112,70 @@ document.addEventListener('click', (e) => {
   location.hash = '';
   location.reload();
 });
+
+function formTexto(chave) {
+  const def = TEXTOS_PADRAO[chave];
+  // Exemplo para a pré-visualização
+  const exProf = D.profissionais.find((p) => p.ativo !== false) || { nome: 'Nome do Profissional', pix: 'chave@exemplo.com', coren: 'COREN-SP 000000-TE' };
+  const exExt = { total: 120, mes: mesAnterior(mesDe(hojeISO())), plantoesFixos: 4, dataLimite: quintoDiaUtil(mesAnterior(mesDe(hojeISO()))) };
+  const campos = montarCampos(D.config, exProf, exExt);
+  modal(esc(def.titulo), `
+    <form class="form">
+      <p class="dica">${esc(def.onde)}</p>
+      <label>Texto <textarea name="texto" rows="12" class="editor-texto">${esc(obterTexto(D.config, chave))}</textarea></label>
+      <div class="campo"><span class="rotulo">Campos automáticos <small>(toque para inserir)</small></span>
+        <div class="chips-campos">${def.campos.map((k) => `<button type="button" class="chip campo-btn" data-campo="${k}" title="${esc(CAMPOS[k])}">{${k}}</button>`).join('')}</div>
+      </div>
+      <details class="termo-box"><summary>Como formatar</summary>
+        <p><code>**texto**</code> deixa em <strong>negrito</strong>. Uma linha em branco começa novo parágrafo.
+        Linhas começando com <code>1.</code> viram lista numerada; com <code>-</code>, lista com marcadores.
+        Os campos entre chaves (ex.: <code>{profissional}</code>) são preenchidos automaticamente.</p>
+      </details>
+      <div class="campo"><span class="rotulo">Pré-visualização <small>(com dados de exemplo)</small></span>
+        <div class="termo-box previa" id="previa"></div></div>
+      <p class="dica erro-texto" id="aviso-campos" hidden></p>
+      <div class="acoes-form">
+        <button type="button" class="btn sec" id="btn-padrao">Restaurar padrão</button>
+        <button type="button" class="btn sec" data-fechar>Cancelar</button>
+        <button class="btn">Salvar</button>
+      </div>
+    </form>`, (el, fechar) => {
+    const f = el.querySelector('form');
+    const ta = f.texto;
+    const atualizar = () => {
+      el.querySelector('#previa').innerHTML = renderTexto(ta.value, campos) || '<p class="dica">(vazio — será usado o texto padrão)</p>';
+      const desc = camposDesconhecidos(ta.value);
+      const aviso = el.querySelector('#aviso-campos');
+      aviso.hidden = !desc.length;
+      aviso.textContent = desc.length ? `Campo(s) não reconhecido(s): ${desc.map((d) => `{${d}}`).join(', ')}. Confira a grafia.` : '';
+    };
+    ta.addEventListener('input', atualizar);
+    atualizar();
+    el.querySelectorAll('[data-campo]').forEach((b) => b.addEventListener('click', () => {
+      const ins = `{${b.dataset.campo}}`;
+      const i = ta.selectionStart ?? ta.value.length;
+      ta.value = ta.value.slice(0, i) + ins + ta.value.slice(ta.selectionEnd ?? i);
+      ta.focus();
+      ta.selectionStart = ta.selectionEnd = i + ins.length;
+      atualizar();
+    }));
+    el.querySelector('#btn-padrao').onclick = () => {
+      if (!confirm('Substituir pelo texto padrão?')) return;
+      ta.value = def.texto;
+      atualizar();
+    };
+    f.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const txt = ta.value.replace(/\r/g, '').trim();
+      if (!txt || txt === def.texto) delete D.config.textos[chave];
+      else D.config.textos[chave] = txt;
+      persistir();
+      fechar();
+      render();
+      toast('Texto salvo.');
+    });
+  });
+}
 
 function exportarBackup() {
   const blob = new Blob([JSON.stringify({ ...D, exportadoEm: new Date().toISOString() }, null, 2)], { type: 'application/json' });
@@ -1144,7 +1241,7 @@ function docExtrato(ext, anexo = false) {
   return `
   <article class="doc">
     ${docCabecalho(`Extrato de Apoio Voluntário${anexo ? ' (anexo)' : ''}`, `Mês de referência: <strong>${nomeMes(ext.mes)}</strong>`)}
-    <p class="doc-linha">Profissional: <strong>${esc(p.nome)}</strong> · CPF ${fmtCPF(p.cpf)} · Categoria: ${NOME_CATEGORIA[p.categoria]} · Modalidade: ${modalidades}</p>
+    <p class="doc-linha">Profissional: <strong>${esc(p.nome)}</strong>${p.coren ? ` · COREN ${esc(p.coren)}` : ''} · Categoria: ${NOME_CATEGORIA[p.categoria]} · Modalidade: ${modalidades}</p>
     <table class="doc-tabela">
       <thead><tr><th>Data</th><th>Turno</th><th>Status do plantão</th><th>Valor unitário</th><th>Subtotal</th></tr></thead>
       <tbody>${ext.linhas.map((l) => `
@@ -1163,7 +1260,7 @@ function docExtrato(ext, anexo = false) {
       <tr class="doc-total"><td>VALOR TOTAL DO REPASSE (até ${fmtData(ext.dataLimite)} – 5º dia útil)</td><td>${fmtBRL(ext.total)}</td></tr>
     </table>
     ${anexo ? '' : `
-    <p class="doc-declaracao">${DECLARACAO_EXTRATO}</p>
+    <p class="doc-declaracao">${declaracaoExtrato(D.config, p, ext)}</p>
     <div class="doc-assinaturas"><div><span></span>Assinatura do(a) Profissional</div></div>`}
     <footer class="doc-rodape">Extrato de Repasse – Ajuda de Custo Indenizatória · emitido em ${fmtData(hojeISO())}</footer>
   </article>`;
@@ -1179,10 +1276,10 @@ function docRecibo(ext) {
     ${docCabecalho('Recibo de Apoio Voluntário', 'Ajuda de Custo Indenizatória – Alimentação e Transporte')}
     <div class="doc-valor">${fmtBRL(ext.total)}</div>
     <div class="doc-texto">${textoRecibo(D.config, p, ext)}</div>
-    ${r ? `<p class="doc-linha">Forma do repasse: ${esc(r.forma)}${r.obs ? ' · ' + esc(r.obs) : ''}</p>` : ''}
+    <p class="doc-linha">${p.pix ? `Chave Pix do(a) profissional: ${esc(p.pix)}` : ''}${r ? `${p.pix ? ' · ' : ''}Forma do repasse: ${esc(r.forma)}${r.obs ? ' · ' + esc(r.obs) : ''}` : ''}</p>
     <p class="doc-local">${esc(local)}, ${data}.</p>
     <div class="doc-assinaturas">
-      <div><span></span>${esc(p.nome)}<br><small>Profissional · CPF ${fmtCPF(p.cpf)}</small></div>
+      <div><span></span>${esc(p.nome)}<br><small>Profissional${p.coren ? ` · COREN ${esc(p.coren)}` : ''}</small></div>
       <div><span></span>Família Colaboradora<br><small>${esc(D.config.familia || '')}</small></div>
     </div>
     <p class="doc-nota">Confirmação digital (opcional): ( ) Recebido e conferido via mensagem em ___/___/______.</p>
@@ -1195,12 +1292,12 @@ function docTermo(p) {
   <article class="doc">
     ${docCabecalho('Termo de Ciência', 'Ajuda de Custo Voluntária e Indenizatória')}
     <div class="doc-texto">${termoProfissional(D.config, p)}
-      ${p.modalidade === 'transporte' && p.categoria === 'fixo' ? `<p><strong>Opção de modalidade:</strong> ${textoOpcaoTransporte(p)}</p>` : ''}
+      ${p.modalidade === 'transporte' && p.categoria === 'fixo' ? `<p><strong>Opção de modalidade:</strong> ${textoOpcaoTransporte(D.config, p)}</p>` : ''}
       ${p.categoria !== 'fixo' ? '<p><strong>Categoria Cobertura/Standby:</strong> não há repasse em dinheiro; a alimentação é fornecida integralmente no local.</p>' : ''}
     </div>
     <p class="doc-local">${esc(D.config.cidade || '____________________')}, ${p.termoAceitoEm ? dataPorExtenso(p.termoAceitoEm.slice(0, 10)) : '____ de ____________ de ______'}.</p>
     <div class="doc-assinaturas">
-      <div><span></span>${esc(p.nome)}<br><small>CPF ${fmtCPF(p.cpf)}</small></div>
+      <div><span></span>${esc(p.nome)}${p.coren ? `<br><small>COREN ${esc(p.coren)}</small>` : ''}</div>
       <div><span></span>Família Colaboradora<br><small>${esc(D.config.familia || '')}</small></div>
     </div>
   </article>`;

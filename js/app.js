@@ -32,6 +32,14 @@ const NOME_TURNO = {
 const CURTO_TURNO = { diurno: 'Diurno', noturno: 'Noturno', '24h': '24h · 07h', '24h19': '24h · 19h' };
 const CLASSE_TURNO = { diurno: 'diurno', noturno: 'noturno', '24h': 't24', '24h19': 't24' };
 
+// Iniciais do profissional para o calendário
+function iniciais(nome) {
+  const partes = String(nome || '').split(/\s+/).filter((w) => w && !/^(d[aeo]s?|e)$/i.test(w));
+  if (!partes.length) return '?';
+  const ini = partes[0][0] + (partes.length > 1 ? partes[partes.length - 1][0] : (partes[0][1] || ''));
+  return ini.toUpperCase();
+}
+
 function dadosNovos(cfg = {}) {
   return {
     versao: 1,
@@ -85,11 +93,11 @@ function toast(msg, tipo = 'ok') {
   setTimeout(() => t.remove(), 3700);
 }
 
-function modal(titulo, corpo, onMount) {
+function modal(titulo, corpo, onMount, classe = '') {
   const el = document.createElement('div');
   el.className = 'modal-fundo';
   el.innerHTML = `
-    <div class="modal" role="dialog" aria-modal="true" aria-label="${esc(titulo)}">
+    <div class="modal ${classe}" role="dialog" aria-modal="true" aria-label="${esc(titulo)}">
       <div class="modal-topo"><h2>${titulo}</h2>
         <button type="button" class="btn-icone" data-fechar aria-label="Fechar">✕</button></div>
       <div class="modal-corpo">${corpo}</div>
@@ -474,6 +482,7 @@ function pgInicio() {
   return `
     <button type="button" class="btn grande largura" data-act="novo-plantao">+ Registrar plantão</button>
 
+    <div class="painel-2">
     <section class="cartao">
       <div class="cartao-topo">
         <div><h2>Fechamento · ${nomeMes(mesFech)}</h2>
@@ -493,7 +502,8 @@ function pgInicio() {
       <h2>Mês em andamento · ${nomeMes(mesAtual)}</h2>
       ${atuais.length ? `<ul class="lista">${atuais.map((e) => progresso(e)).join('')}</ul>`
         : '<p class="dica">Nenhum profissional ativo.</p>'}
-    </section>`;
+    </section>
+    </div>`;
 }
 
 function linhaResumo(e, comMes = false) {
@@ -606,13 +616,13 @@ function formPlantao(plantao) {
   const mod0 = p0.modalidade || pr0.modalidade || 'integral';
 
   const corpo = `
-    <form class="form" id="f-plantao">
+    <form class="form ${novo ? 'com-cal' : ''}" id="f-plantao">
       <label>Profissional
         <select name="profissionalId" required>
           ${disponiveis.map((p) => opt(p.id, `${p.nome} (${NOME_CATEGORIA[p.categoria]})`, p0.profissionalId)).join('')}
         </select></label>
       ${novo
-        ? `<div class="campo"><span class="rotulo">Datas <small>(toque em um ou mais dias)</small></span><div id="cal" class="cal"></div></div>`
+        ? `<div class="campo campo-cal"><span class="rotulo">Datas <small>(toque em um ou mais dias)</small></span><div id="cal" class="cal"></div></div>`
         : `<label>Data <input type="date" name="data" required value="${p0.data}"></label>`}
       <fieldset class="segmentado turnos"><legend>Turno</legend>
         ${radio('turno', 'diurno', `☀ Diurno <small>${HORARIO_TURNO.diurno} · 12h</small>`, p0.turno)}
@@ -636,6 +646,7 @@ function formPlantao(plantao) {
   modal(novo ? 'Registrar plantão' : 'Editar plantão', corpo, (el, fechar) => {
     const f = el.querySelector('form');
     const selecionadas = new Set();
+    let ultimoDia = null;
     let calMes = ui.mes;
     let ultimoProf = f.profissionalId.value;
 
@@ -645,8 +656,30 @@ function formPlantao(plantao) {
       const cal = el.querySelector('#cal');
       if (!cal) return;
       const profId = f.profissionalId.value;
-      // Períodos já ocupados (inclui o dia seguinte de um 24h iniciado às 19h)
-      const ocupado = new Set(D.plantoes.filter((p) => p.profissionalId === profId).flatMap(periodosOcupados));
+      // Quem ocupa cada período de 12h (todos os profissionais; inclui o dia
+      // seguinte de um 24h iniciado às 19h)
+      // per -> [{ id, turno }]
+      const ocupantes = new Map();
+      for (const p of D.plantoes) {
+        for (const per of periodosOcupados(p)) {
+          const lista = ocupantes.get(per) || [];
+          if (!lista.some((o) => o.id === p.profissionalId)) lista.push({ id: p.profissionalId, turno: p.turno });
+          ocupantes.set(per, lista);
+        }
+      }
+      const idsEm = (per) => (ocupantes.get(per) || []).map((o) => o.id);
+      const noMes = new Set();
+      // Cores iguais às da lista de plantões: Diurno (amarelo), Noturno (roxo), 24h (rosa)
+      const faixa = (iso, per) => {
+        const lista = ocupantes.get(`${iso}|${per}`) || [];
+        if (!lista.length) return `<span class="faixa vazia" title="${per === 'D' ? 'Dia' : 'Noite'}: livre"></span>`;
+        lista.forEach((o) => noMes.add(o.id));
+        // o profissional selecionado aparece primeiro
+        const ordenados = [...lista].sort((a, b) => (b.id === profId) - (a.id === profId));
+        const o = ordenados[0];
+        const nomes = lista.map((x) => prof(x.id)?.nome || '?').join(', ');
+        return `<span class="faixa ${CLASSE_TURNO[o.turno]} ${o.id === profId ? 'atual' : ''}" title="${per === 'D' ? 'Dia' : 'Noite'}: ${esc(nomes)}">${esc(iniciais(prof(o.id)?.nome))}${lista.length > 1 ? `+${lista.length - 1}` : ''}</span>`;
+      };
       const primeiro = parseISO(`${calMes}-01`).getDay();
       const n = diasDoMes(calMes);
       const hoje = hojeISO();
@@ -658,12 +691,25 @@ function formPlantao(plantao) {
       for (let i = 0; i < primeiro; i++) html += '<span></span>';
       for (let d = 1; d <= n; d++) {
         const iso = `${calMes}-${String(d).padStart(2, '0')}`;
-        const marcas = ['D', 'N'].filter((x) => ocupado.has(`${iso}|${x}`)).join('·');
-        const cls = [selecionadas.has(iso) && 'sel', iso === hoje && 'hoje', marcas && 'tem'].filter(Boolean).join(' ');
+        const meu = ['D', 'N'].some((x) => idsEm(`${iso}|${x}`).includes(profId));
+        const cls = [selecionadas.has(iso) && 'sel', iso === hoje && 'hoje', meu && 'tem'].filter(Boolean).join(' ');
         html += `<button type="button" class="cal-dia ${cls}" data-dia="${iso}" aria-pressed="${selecionadas.has(iso)}">
-          ${d}${marcas ? `<small>${marcas}</small>` : ''}</button>`;
+          <span class="cal-num">${d}</span>${faixa(iso, 'D')}${faixa(iso, 'N')}</button>`;
       }
-      html += `</div><p class="dica">${selecionadas.size} dia(s) selecionado(s). Marcas indicam períodos já ocupados por este profissional: D = dia (07h–19h), N = noite (19h–07h).</p>`;
+      const legenda = D.profissionais.filter((p) => noMes.has(p.id))
+        .sort((a, b) => (b.id === profId) - (a.id === profId) || ordenarNome(a, b))
+        .map((p) => `<span class="leg ${p.id === profId ? 'atual' : ''}"><b>${esc(iniciais(p.nome))}</b> ${esc(p.nome)}</span>`).join('');
+      const legTurnos = ['diurno', 'noturno', '24h'].map((t) => chip(t === '24h' ? '24h' : CURTO_TURNO[t], CLASSE_TURNO[t])).join(' ');
+      let detalhe = '';
+      if (ultimoDia && mesDe(ultimoDia) === calMes) {
+        const quem = (per) => (ocupantes.get(`${ultimoDia}|${per}`) || []).map((o) => `${esc(prof(o.id)?.nome || '?')} (${CURTO_TURNO[o.turno]})`).join(', ') || '<em>livre</em>';
+        detalhe = `<p class="cal-detalhe"><strong>${diaSemana(ultimoDia)} ${fmtData(ultimoDia).slice(0, 5)}</strong> · Dia: ${quem('D')} · Noite: ${quem('N')}</p>`;
+      }
+      html += `</div>
+        <div class="cal-legenda turnos-leg">${legTurnos}</div>
+        ${legenda ? `<div class="cal-legenda">${legenda}</div>` : ''}
+        ${detalhe}
+        <p class="dica">${selecionadas.size} dia(s) selecionado(s). Em cada dia, a faixa de cima é o <strong>dia (07h–19h)</strong> e a de baixo a <strong>noite (19h–07h)</strong>; faixa vazia = período sem profissional. Destaque forte = profissional selecionado. Toque num dia para ver os nomes.</p>`;
       cal.innerHTML = html;
     }
 
@@ -698,6 +744,7 @@ function formPlantao(plantao) {
       if (dia) {
         const iso = dia.dataset.dia;
         selecionadas.has(iso) ? selecionadas.delete(iso) : selecionadas.add(iso);
+        ultimoDia = iso;
         renderCal();
       }
     });
@@ -738,7 +785,7 @@ function formPlantao(plantao) {
       if (ignoradas.length) toast(`${ignoradas.length} data(s) ignorada(s): se sobrepunham a plantões já registrados.`, 'alerta');
       if (pagos.length) toast('Atenção: o mês já tinha repasse registrado como pago. Confira o extrato.', 'alerta');
     });
-  });
+  }, novo ? 'largo' : '');
 }
 
 function formImportacao() {
@@ -973,6 +1020,7 @@ function pgExtratoDetalhe() {
       <button type="button" class="btn sec pequeno" data-act="copiar-pix">Copiar</button></div>` : ''}
     ${seletorMes()}
 
+    <div class="detalhe-extrato"><div>
     <section class="cartao">
       ${ext.linhas.length ? `<ul class="lista extrato">
         ${ext.linhas.map((l) => `
@@ -985,6 +1033,7 @@ function pgExtratoDetalhe() {
           </li>`).join('')}
       </ul>` : `<p class="dica">Nenhum plantão em ${nomeMes(ui.mes)}.</p>`}
     </section>
+    </div><div>
 
     <section class="cartao resumo">
       <h2>Resumo do período</h2>
@@ -1007,7 +1056,8 @@ function pgExtratoDetalhe() {
       <button type="button" class="btn sec" data-act="pdf-extrato">Extrato (PDF)</button>
       ${ext.total > 0 ? '<button type="button" class="btn sec" data-act="pdf-recibo">Recibo (PDF)</button>' : ''}
       <button type="button" class="btn sec whats" data-act="whatsapp">Enviar por WhatsApp</button>
-    </div>`;
+    </div>
+    </div></div>`;
 }
 
 function formRepasse(ext) {
@@ -1059,6 +1109,7 @@ function pgAjustes() {
   const c = D.config;
   return `
     <h1>Ajustes</h1>
+    <div class="grade-cartoes">
     <section class="cartao">
       <h2>Família Colaboradora</h2>
       <form class="form" id="f-familia">
@@ -1121,7 +1172,8 @@ function pgAjustes() {
         <button type="button" class="btn sec" data-act="sair">Sair</button>
       </div>
       <button type="button" class="link perigo" id="btn-apagar-tudo">Apagar todos os dados deste aparelho</button>
-    </section>`;
+    </section>
+    </div>`;
 }
 
 // Os formulários de Ajustes usam delegação de submit

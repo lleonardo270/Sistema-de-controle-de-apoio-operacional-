@@ -32,9 +32,7 @@ const NOME_TURNO = {
 const CURTO_TURNO = { diurno: 'Diurno', noturno: 'Noturno', '24h': '24h · 07h', '24h19': '24h · 19h' };
 const CLASSE_TURNO = { diurno: 'diurno', noturno: 'noturno', '24h': 't24', '24h19': 't24' };
 
-// Cor fixa por profissional (pela ordem de cadastro) e iniciais para o calendário
-const PALETA = ['#0f766e', '#7c3aed', '#c2410c', '#2563eb', '#be185d', '#15803d', '#a16207', '#475569', '#0891b2', '#9333ea'];
-const corProf = (id) => PALETA[Math.max(0, D.profissionais.findIndex((p) => p.id === id)) % PALETA.length];
+// Iniciais do profissional para o calendário
 function iniciais(nome) {
   const partes = String(nome || '').split(/\s+/).filter((w) => w && !/^(d[aeo]s?|e)$/i.test(w));
   if (!partes.length) return '?';
@@ -658,24 +656,27 @@ function formPlantao(plantao) {
       const profId = f.profissionalId.value;
       // Quem ocupa cada período de 12h (todos os profissionais; inclui o dia
       // seguinte de um 24h iniciado às 19h)
+      // per -> [{ id, turno }]
       const ocupantes = new Map();
       for (const p of D.plantoes) {
         for (const per of periodosOcupados(p)) {
           const lista = ocupantes.get(per) || [];
-          if (!lista.includes(p.profissionalId)) lista.push(p.profissionalId);
+          if (!lista.some((o) => o.id === p.profissionalId)) lista.push({ id: p.profissionalId, turno: p.turno });
           ocupantes.set(per, lista);
         }
       }
+      const idsEm = (per) => (ocupantes.get(per) || []).map((o) => o.id);
       const noMes = new Set();
+      // Cores iguais às da lista de plantões: Diurno (amarelo), Noturno (roxo), 24h (rosa)
       const faixa = (iso, per) => {
-        const ids = ocupantes.get(`${iso}|${per}`) || [];
-        if (!ids.length) return `<span class="faixa vazia" title="${per === 'D' ? 'Dia' : 'Noite'}: livre"></span>`;
-        ids.forEach((id) => noMes.add(id));
+        const lista = ocupantes.get(`${iso}|${per}`) || [];
+        if (!lista.length) return `<span class="faixa vazia" title="${per === 'D' ? 'Dia' : 'Noite'}: livre"></span>`;
+        lista.forEach((o) => noMes.add(o.id));
         // o profissional selecionado aparece primeiro
-        const ordenados = [...ids].sort((a, b) => (b === profId) - (a === profId));
-        const pr = prof(ordenados[0]);
-        const nomes = ids.map((id) => prof(id)?.nome || '?').join(', ');
-        return `<span class="faixa ${ids.includes(profId) ? 'atual' : ''}" style="--c:${corProf(ordenados[0])}" title="${per === 'D' ? 'Dia' : 'Noite'}: ${esc(nomes)}">${esc(iniciais(pr?.nome))}${ids.length > 1 ? `+${ids.length - 1}` : ''}</span>`;
+        const ordenados = [...lista].sort((a, b) => (b.id === profId) - (a.id === profId));
+        const o = ordenados[0];
+        const nomes = lista.map((x) => prof(x.id)?.nome || '?').join(', ');
+        return `<span class="faixa ${CLASSE_TURNO[o.turno]} ${o.id === profId ? 'atual' : ''}" title="${per === 'D' ? 'Dia' : 'Noite'}: ${esc(nomes)}">${esc(iniciais(prof(o.id)?.nome))}${lista.length > 1 ? `+${lista.length - 1}` : ''}</span>`;
       };
       const primeiro = parseISO(`${calMes}-01`).getDay();
       const n = diasDoMes(calMes);
@@ -688,23 +689,25 @@ function formPlantao(plantao) {
       for (let i = 0; i < primeiro; i++) html += '<span></span>';
       for (let d = 1; d <= n; d++) {
         const iso = `${calMes}-${String(d).padStart(2, '0')}`;
-        const meu = ['D', 'N'].some((x) => (ocupantes.get(`${iso}|${x}`) || []).includes(profId));
+        const meu = ['D', 'N'].some((x) => idsEm(`${iso}|${x}`).includes(profId));
         const cls = [selecionadas.has(iso) && 'sel', iso === hoje && 'hoje', meu && 'tem'].filter(Boolean).join(' ');
         html += `<button type="button" class="cal-dia ${cls}" data-dia="${iso}" aria-pressed="${selecionadas.has(iso)}">
           <span class="cal-num">${d}</span>${faixa(iso, 'D')}${faixa(iso, 'N')}</button>`;
       }
       const legenda = D.profissionais.filter((p) => noMes.has(p.id))
         .sort((a, b) => (b.id === profId) - (a.id === profId) || ordenarNome(a, b))
-        .map((p) => `<span class="leg ${p.id === profId ? 'atual' : ''}"><i style="--c:${corProf(p.id)}">${esc(iniciais(p.nome))}</i>${esc(p.nome)}</span>`).join('');
+        .map((p) => `<span class="leg ${p.id === profId ? 'atual' : ''}"><b>${esc(iniciais(p.nome))}</b> ${esc(p.nome)}</span>`).join('');
+      const legTurnos = ['diurno', 'noturno', '24h'].map((t) => chip(t === '24h' ? '24h' : CURTO_TURNO[t], CLASSE_TURNO[t])).join(' ');
       let detalhe = '';
       if (ultimoDia && mesDe(ultimoDia) === calMes) {
-        const quem = (per) => (ocupantes.get(`${ultimoDia}|${per}`) || []).map((id) => esc(prof(id)?.nome || '?')).join(', ') || '<em>livre</em>';
+        const quem = (per) => (ocupantes.get(`${ultimoDia}|${per}`) || []).map((o) => `${esc(prof(o.id)?.nome || '?')} (${CURTO_TURNO[o.turno]})`).join(', ') || '<em>livre</em>';
         detalhe = `<p class="cal-detalhe"><strong>${diaSemana(ultimoDia)} ${fmtData(ultimoDia).slice(0, 5)}</strong> · Dia: ${quem('D')} · Noite: ${quem('N')}</p>`;
       }
       html += `</div>
+        <div class="cal-legenda turnos-leg">${legTurnos}</div>
         ${legenda ? `<div class="cal-legenda">${legenda}</div>` : ''}
         ${detalhe}
-        <p class="dica">${selecionadas.size} dia(s) selecionado(s). Em cada dia, a faixa de cima é o <strong>dia (07h–19h)</strong> e a de baixo a <strong>noite (19h–07h)</strong>; faixa vazia = período sem profissional. Toque num dia para ver os nomes.</p>`;
+        <p class="dica">${selecionadas.size} dia(s) selecionado(s). Em cada dia, a faixa de cima é o <strong>dia (07h–19h)</strong> e a de baixo a <strong>noite (19h–07h)</strong>; faixa vazia = período sem profissional. Destaque forte = profissional selecionado. Toque num dia para ver os nomes.</p>`;
       cal.innerHTML = html;
     }
 

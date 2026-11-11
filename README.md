@@ -21,6 +21,26 @@ apurar a **ajuda de custo voluntária e indenizatória** (alimentação e transp
 Extras: marcar repasse como pago (data e forma), alerta de atraso, resumo do mês em PDF, envio do extrato
 por WhatsApp, backup/restauração e instalação como aplicativo no celular (PWA, funciona sem internet).
 
+## Configuração única (uma família)
+
+Esta instalação é de uso exclusivo de uma família. No **primeiro acesso** o app pede, uma única vez:
+nome da família, nome do paciente, cidade, empresa prestadora de serviços e a senha. Depois disso
+tudo pode ser ajustado em **Ajustes**, sem novo deploy.
+
+Se quiser deixar esses dados já preenchidos no primeiro acesso, edite `js/config.js`
+(também é ali que ficam os valores padrão de R$ 20,00 de alimentação e R$ 10,00 de transporte).
+
+## Editar textos sem novo deploy
+
+Em **Ajustes → Textos e termos** a família pode editar: o termo de ciência inicial, o termo do profissional,
+o aceite da opção “Apenas Transporte”, o recibo, a declaração do extrato e o rodapé do WhatsApp.
+
+- `**texto**` deixa em negrito; uma linha em branco começa novo parágrafo; linhas com `1.` ou `-` viram lista.
+- Campos como `{profissional}`, `{cpf}`, `{valor}`, `{valor_extenso}`, `{mes}`, `{familia}` são preenchidos
+  automaticamente (toque no campo para inseri-lo).
+- Há pré-visualização com dados de exemplo e o botão **Restaurar padrão**.
+- Os textos editados ficam salvos junto com os dados (e vão no backup).
+
 ## Como os dados são guardados (importante)
 
 - **Não há servidor nem banco de dados.** Os dados ficam no navegador do aparelho, **criptografados
@@ -74,7 +94,8 @@ css/style.css         layout responsivo (mobile-first) e layout de impressão/PD
 js/app.js             telas e interações
 js/calc.js            regras de negócio (elegibilidade, retroativo, 5º dia útil, extenso, CPF, CSV)
 js/store.js           armazenamento local criptografado
-js/textos.js          termos e textos de recibo
+js/textos.js          textos padrão dos termos/recibos e o formatador dos textos editáveis
+js/config.js          parâmetros da família usados no primeiro acesso
 sw.js                 funcionamento offline
 vercel.json           cabeçalhos de segurança
 tests/                testes automatizados

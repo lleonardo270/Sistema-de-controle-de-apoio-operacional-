@@ -5,8 +5,10 @@ import {
 } from './calc.js';
 import * as store from './store.js';
 import {
-  termoFamilia, termoProfissional, textoOpcaoTransporte, textoRecibo, DECLARACAO_EXTRATO,
+  termoFamilia, termoProfissional, textoOpcaoTransporte, textoRecibo, declaracaoExtrato, rodapeWhatsapp,
+  TEXTOS_PADRAO, CAMPOS, obterTexto, textoPersonalizado, montarCampos, renderTexto, camposDesconhecidos,
 } from './textos.js';
+import { CONFIG_PADRAO } from './config.js';
 
 // ======================================================================
 // Estado
@@ -28,10 +30,12 @@ function dadosNovos(cfg = {}) {
   return {
     versao: 1,
     config: {
-      familia: cfg.familia || '',
-      cidade: cfg.cidade || '',
-      empresa: cfg.empresa || '',
-      valores: { ...VALORES_PADRAO },
+      familia: cfg.familia ?? CONFIG_PADRAO.familia,
+      paciente: cfg.paciente ?? CONFIG_PADRAO.paciente,
+      cidade: cfg.cidade ?? CONFIG_PADRAO.cidade,
+      empresa: cfg.empresa ?? CONFIG_PADRAO.empresa,
+      valores: { ...VALORES_PADRAO, ...CONFIG_PADRAO.valores },
+      textos: {},
       termoFamiliaAceitoEm: new Date().toISOString(),
     },
     profissionais: [],
@@ -45,6 +49,7 @@ function normalizar(d) {
   const out = { ...base, ...d };
   out.config = { ...base.config, ...(d.config || {}) };
   out.config.valores = { ...VALORES_PADRAO, ...(out.config.valores || {}) };
+  out.config.textos = out.config.textos && typeof out.config.textos === 'object' ? out.config.textos : {};
   out.profissionais = Array.isArray(d.profissionais) ? d.profissionais : [];
   out.plantoes = Array.isArray(d.plantoes) ? d.plantoes : [];
   out.repasses = d.repasses && typeof d.repasses === 'object' ? d.repasses : {};
@@ -171,15 +176,18 @@ function telaConfiguracao() {
         <h1>Apoio Voluntário</h1><p>Ajuda de Custo Indenizatória · Registro de Plantões</p></div></div>
       <h2>Primeiro acesso</h2>
       <form id="f-config" class="form">
-        <label>Nome da Família Colaboradora <input name="familia" required maxlength="80" placeholder="Ex.: Família Silva"></label>
-        <label>Cidade (para os recibos) <input name="cidade" maxlength="60" placeholder="Ex.: São Paulo/SP"></label>
+        <p class="dica">Configuração única desta instalação. Tudo pode ser ajustado depois em <strong>Ajustes</strong>.</p>
+        <label>Nome da Família Colaboradora <input name="familia" required maxlength="80" placeholder="Ex.: Família Silva" value="${esc(CONFIG_PADRAO.familia)}"></label>
+        <label>Nome do paciente <input name="paciente" maxlength="80" placeholder="Ex.: Sr. José da Silva" value="${esc(CONFIG_PADRAO.paciente)}"></label>
+        <label>Cidade (para os recibos) <input name="cidade" maxlength="60" placeholder="Ex.: São Paulo/SP" value="${esc(CONFIG_PADRAO.cidade)}"></label>
+        <label>Empresa prestadora de serviços <input name="empresa" maxlength="80" value="${esc(CONFIG_PADRAO.empresa)}"></label>
         <label>Crie uma senha <input name="senha" type="password" required minlength="6" autocomplete="new-password"></label>
         <label>Repita a senha <input name="senha2" type="password" required minlength="6" autocomplete="new-password"></label>
         <p class="aviso">Guarde bem a senha: os dados ficam <strong>criptografados neste aparelho</strong> e
         <strong>não há como recuperá-la</strong>. Use “Ajustes → Backup” regularmente.</p>
         <details class="termo-box" open>
           <summary>Termo de Ciência Inicial</summary>
-          ${termoFamilia({ empresa: '' })}
+          <div id="termo-inicial"></div>
         </details>
         <label class="check"><input type="checkbox" name="aceite" required>
           <span>Li e concordo com o Termo de Ciência: este sistema registra apenas o apoio voluntário e indenizatório da família.</span></label>
@@ -189,6 +197,15 @@ function telaConfiguracao() {
     </div>
   </main>`;
   const f = document.getElementById('f-config');
+  const cfgDoForm = () => ({
+    familia: f.familia.value.trim(), paciente: f.paciente.value.trim(),
+    cidade: f.cidade.value.trim(), empresa: f.empresa.value.trim(),
+  });
+  const atualizarTermo = () => {
+    document.getElementById('termo-inicial').innerHTML = termoFamilia({ ...cfgDoForm(), valores: CONFIG_PADRAO.valores });
+  };
+  f.addEventListener('input', atualizarTermo);
+  atualizarTermo();
   f.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (f.senha.value !== f.senha2.value) return toast('As senhas não conferem.', 'erro');
@@ -196,12 +213,11 @@ function telaConfiguracao() {
     btn.disabled = true;
     btn.textContent = 'Protegendo dados…';
     try {
-      let dados = dadosNovos({ familia: f.familia.value.trim(), cidade: f.cidade.value.trim() });
+      let dados = dadosNovos(cfgDoForm());
       const arq = f.backup.files[0];
       if (arq) {
         dados = normalizar(JSON.parse(await arq.text()));
-        if (f.familia.value.trim()) dados.config.familia = f.familia.value.trim();
-        if (f.cidade.value.trim()) dados.config.cidade = f.cidade.value.trim();
+        for (const [k, v] of Object.entries(cfgDoForm())) if (v) dados.config[k] = v;
         dados.config.termoFamiliaAceitoEm = new Date().toISOString();
       }
       await store.criarCofre(f.senha.value, dados);
@@ -368,6 +384,7 @@ const ACOES = {
   },
   'filtro-prof'(el) { ui.filtroProf = el.value; render(); },
   'exportar'() { exportarBackup(); },
+  'editar-texto'(el) { formTexto(el.dataset.chave); },
   'ver-termo-familia'() { modal('Termo de Ciência Inicial', `<div class="termo-box">${termoFamilia(D.config)}</div>
     <p class="dica">Aceito em ${new Date(D.config.termoFamiliaAceitoEm).toLocaleString('pt-BR')}.</p>`); },
 };
@@ -792,7 +809,7 @@ function formProfissional(p) {
       const precisaOpcao = cat === 'fixo' && mod === 'transporte' && !(p0.modalidade === 'transporte' && p0.opcaoTransporteEm);
       el.querySelector('#box-opcao').hidden = !precisaOpcao;
       f.opcao.required = precisaOpcao;
-      el.querySelector('#txt-opcao').innerHTML = 'Aceite prévio: ' + textoOpcaoTransporte({ nome: f.nome.value.trim() });
+      el.querySelector('#txt-opcao').innerHTML = 'Aceite prévio: ' + textoOpcaoTransporte(D.config, { nome: f.nome.value.trim() });
       el.querySelector('#termo-prof').innerHTML = termoProfissional(D.config, { nome: f.nome.value.trim(), cpf: f.cpf.value });
     }
     f.addEventListener('input', sync);
@@ -964,7 +981,7 @@ function textoWhatsApp(ext) {
     `*Valor total do repasse: ${fmtBRL(ext.total)}*`,
     st.pago ? `Repassado em ${fmtData(st.r.pagoEm)} (${st.r.forma})` : `Data limite: ${fmtData(ext.dataLimite)}`,
     '',
-    '_Ajuda de custo voluntária e indenizatória (alimentação/transporte), sem natureza salarial._',
+    rodapeWhatsapp(D.config, ext.profissional, ext),
   ].filter((x) => x !== null).join('\n');
 }
 
@@ -979,8 +996,9 @@ function pgAjustes() {
       <h2>Família Colaboradora</h2>
       <form class="form" id="f-familia">
         <label>Nome da família <input name="familia" maxlength="80" value="${esc(c.familia)}"></label>
+        <label>Nome do paciente <input name="paciente" maxlength="80" value="${esc(c.paciente)}"></label>
         <label>Cidade (recibos) <input name="cidade" maxlength="60" value="${esc(c.cidade)}"></label>
-        <label>Empresa prestadora de serviços <small>(opcional, citada nos termos)</small> <input name="empresa" maxlength="80" value="${esc(c.empresa)}"></label>
+        <label>Empresa prestadora de serviços <small>(citada nos termos)</small> <input name="empresa" maxlength="80" value="${esc(c.empresa)}"></label>
         <button class="btn">Salvar</button>
       </form>
     </section>
@@ -996,6 +1014,16 @@ function pgAjustes() {
         Novos valores valem para os próximos registros.</p>
         <button class="btn">Salvar valores</button>
       </form>
+    </section>
+
+    <section class="cartao">
+      <h2>Textos e termos</h2>
+      <p class="dica">Edite aqui os textos dos termos, recibos e mensagens. As alterações valem na hora, sem novo deploy.</p>
+      <ul class="lista">${Object.entries(TEXTOS_PADRAO).map(([k, t]) => `
+        <li class="item clicavel" data-act="editar-texto" data-chave="${k}">
+          <div class="item-info"><strong>${esc(t.titulo)}</strong><span class="dica">${esc(t.onde)}</span></div>
+          <div class="item-dir">${textoPersonalizado(c, k) ? chip('Personalizado', 'info') : chip('Padrão', 'neutro')}</div>
+        </li>`).join('')}</ul>
     </section>
 
     <section class="cartao">
@@ -1036,7 +1064,10 @@ document.addEventListener('submit', async (e) => {
   if (!D || !['f-familia', 'f-valores', 'f-senha'].includes(f.id)) return;
   e.preventDefault();
   if (f.id === 'f-familia') {
-    Object.assign(D.config, { familia: f.familia.value.trim(), cidade: f.cidade.value.trim(), empresa: f.empresa.value.trim() });
+    Object.assign(D.config, {
+      familia: f.familia.value.trim(), paciente: f.paciente.value.trim(),
+      cidade: f.cidade.value.trim(), empresa: f.empresa.value.trim(),
+    });
     persistir();
     render();
     toast('Dados da família salvos.');
@@ -1079,6 +1110,70 @@ document.addEventListener('click', (e) => {
   location.hash = '';
   location.reload();
 });
+
+function formTexto(chave) {
+  const def = TEXTOS_PADRAO[chave];
+  // Exemplo para a pré-visualização
+  const exProf = D.profissionais.find((p) => p.ativo !== false) || { nome: 'Nome do Profissional', cpf: '52998224725' };
+  const exExt = { total: 120, mes: mesAnterior(mesDe(hojeISO())), plantoesFixos: 4, dataLimite: quintoDiaUtil(mesAnterior(mesDe(hojeISO()))) };
+  const campos = montarCampos(D.config, exProf, exExt);
+  modal(esc(def.titulo), `
+    <form class="form">
+      <p class="dica">${esc(def.onde)}</p>
+      <label>Texto <textarea name="texto" rows="12" class="editor-texto">${esc(obterTexto(D.config, chave))}</textarea></label>
+      <div class="campo"><span class="rotulo">Campos automáticos <small>(toque para inserir)</small></span>
+        <div class="chips-campos">${def.campos.map((k) => `<button type="button" class="chip campo-btn" data-campo="${k}" title="${esc(CAMPOS[k])}">{${k}}</button>`).join('')}</div>
+      </div>
+      <details class="termo-box"><summary>Como formatar</summary>
+        <p><code>**texto**</code> deixa em <strong>negrito</strong>. Uma linha em branco começa novo parágrafo.
+        Linhas começando com <code>1.</code> viram lista numerada; com <code>-</code>, lista com marcadores.
+        Os campos entre chaves (ex.: <code>{profissional}</code>) são preenchidos automaticamente.</p>
+      </details>
+      <div class="campo"><span class="rotulo">Pré-visualização <small>(com dados de exemplo)</small></span>
+        <div class="termo-box previa" id="previa"></div></div>
+      <p class="dica erro-texto" id="aviso-campos" hidden></p>
+      <div class="acoes-form">
+        <button type="button" class="btn sec" id="btn-padrao">Restaurar padrão</button>
+        <button type="button" class="btn sec" data-fechar>Cancelar</button>
+        <button class="btn">Salvar</button>
+      </div>
+    </form>`, (el, fechar) => {
+    const f = el.querySelector('form');
+    const ta = f.texto;
+    const atualizar = () => {
+      el.querySelector('#previa').innerHTML = renderTexto(ta.value, campos) || '<p class="dica">(vazio — será usado o texto padrão)</p>';
+      const desc = camposDesconhecidos(ta.value);
+      const aviso = el.querySelector('#aviso-campos');
+      aviso.hidden = !desc.length;
+      aviso.textContent = desc.length ? `Campo(s) não reconhecido(s): ${desc.map((d) => `{${d}}`).join(', ')}. Confira a grafia.` : '';
+    };
+    ta.addEventListener('input', atualizar);
+    atualizar();
+    el.querySelectorAll('[data-campo]').forEach((b) => b.addEventListener('click', () => {
+      const ins = `{${b.dataset.campo}}`;
+      const i = ta.selectionStart ?? ta.value.length;
+      ta.value = ta.value.slice(0, i) + ins + ta.value.slice(ta.selectionEnd ?? i);
+      ta.focus();
+      ta.selectionStart = ta.selectionEnd = i + ins.length;
+      atualizar();
+    }));
+    el.querySelector('#btn-padrao').onclick = () => {
+      if (!confirm('Substituir pelo texto padrão?')) return;
+      ta.value = def.texto;
+      atualizar();
+    };
+    f.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const txt = ta.value.replace(/\r/g, '').trim();
+      if (!txt || txt === def.texto) delete D.config.textos[chave];
+      else D.config.textos[chave] = txt;
+      persistir();
+      fechar();
+      render();
+      toast('Texto salvo.');
+    });
+  });
+}
 
 function exportarBackup() {
   const blob = new Blob([JSON.stringify({ ...D, exportadoEm: new Date().toISOString() }, null, 2)], { type: 'application/json' });
@@ -1163,7 +1258,7 @@ function docExtrato(ext, anexo = false) {
       <tr class="doc-total"><td>VALOR TOTAL DO REPASSE (até ${fmtData(ext.dataLimite)} – 5º dia útil)</td><td>${fmtBRL(ext.total)}</td></tr>
     </table>
     ${anexo ? '' : `
-    <p class="doc-declaracao">${DECLARACAO_EXTRATO}</p>
+    <p class="doc-declaracao">${declaracaoExtrato(D.config, p, ext)}</p>
     <div class="doc-assinaturas"><div><span></span>Assinatura do(a) Profissional</div></div>`}
     <footer class="doc-rodape">Extrato de Repasse – Ajuda de Custo Indenizatória · emitido em ${fmtData(hojeISO())}</footer>
   </article>`;
@@ -1195,7 +1290,7 @@ function docTermo(p) {
   <article class="doc">
     ${docCabecalho('Termo de Ciência', 'Ajuda de Custo Voluntária e Indenizatória')}
     <div class="doc-texto">${termoProfissional(D.config, p)}
-      ${p.modalidade === 'transporte' && p.categoria === 'fixo' ? `<p><strong>Opção de modalidade:</strong> ${textoOpcaoTransporte(p)}</p>` : ''}
+      ${p.modalidade === 'transporte' && p.categoria === 'fixo' ? `<p><strong>Opção de modalidade:</strong> ${textoOpcaoTransporte(D.config, p)}</p>` : ''}
       ${p.categoria !== 'fixo' ? '<p><strong>Categoria Cobertura/Standby:</strong> não há repasse em dinheiro; a alimentação é fornecida integralmente no local.</p>' : ''}
     </div>
     <p class="doc-local">${esc(D.config.cidade || '____________________')}, ${p.termoAceitoEm ? dataPorExtenso(p.termoAceitoEm.slice(0, 10)) : '____ de ____________ de ______'}.</p>

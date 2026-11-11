@@ -293,3 +293,11 @@ select { min-height: 46px; }
 .doc-assinaturas span { display: block; border-top: 1px solid #111; margin-bottom: 4px; }
 .doc-rodape { margin-top: 28px; font-size: 8.5pt; color: #666; border-top: 1px solid #ddd; padding-top: 6px; }
 .quebra { break-after: page; page-break-after: always; }
+
+/* ---------- Editor de textos ---------- */
+.editor-texto { font-size: 15px; line-height: 1.45; min-height: 220px; resize: vertical; font-weight: 400; }
+.chips-campos { display: flex; flex-wrap: wrap; gap: 6px; }
+.campo-btn { border: 1px solid var(--borda); cursor: pointer; font-family: ui-monospace, monospace; font-size: .78rem; padding: 6px 10px; }
+.previa { max-height: 260px; overflow: auto; }
+.erro-texto { color: var(--erro); }
+.termo-box code { background: #e8efed; padding: 1px 5px; border-radius: 4px; }

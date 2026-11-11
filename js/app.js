@@ -93,11 +93,11 @@ function toast(msg, tipo = 'ok') {
   setTimeout(() => t.remove(), 3700);
 }
 
-function modal(titulo, corpo, onMount) {
+function modal(titulo, corpo, onMount, classe = '') {
   const el = document.createElement('div');
   el.className = 'modal-fundo';
   el.innerHTML = `
-    <div class="modal" role="dialog" aria-modal="true" aria-label="${esc(titulo)}">
+    <div class="modal ${classe}" role="dialog" aria-modal="true" aria-label="${esc(titulo)}">
       <div class="modal-topo"><h2>${titulo}</h2>
         <button type="button" class="btn-icone" data-fechar aria-label="Fechar">✕</button></div>
       <div class="modal-corpo">${corpo}</div>
@@ -482,6 +482,7 @@ function pgInicio() {
   return `
     <button type="button" class="btn grande largura" data-act="novo-plantao">+ Registrar plantão</button>
 
+    <div class="painel-2">
     <section class="cartao">
       <div class="cartao-topo">
         <div><h2>Fechamento · ${nomeMes(mesFech)}</h2>
@@ -501,7 +502,8 @@ function pgInicio() {
       <h2>Mês em andamento · ${nomeMes(mesAtual)}</h2>
       ${atuais.length ? `<ul class="lista">${atuais.map((e) => progresso(e)).join('')}</ul>`
         : '<p class="dica">Nenhum profissional ativo.</p>'}
-    </section>`;
+    </section>
+    </div>`;
 }
 
 function linhaResumo(e, comMes = false) {
@@ -614,13 +616,13 @@ function formPlantao(plantao) {
   const mod0 = p0.modalidade || pr0.modalidade || 'integral';
 
   const corpo = `
-    <form class="form" id="f-plantao">
+    <form class="form ${novo ? 'com-cal' : ''}" id="f-plantao">
       <label>Profissional
         <select name="profissionalId" required>
           ${disponiveis.map((p) => opt(p.id, `${p.nome} (${NOME_CATEGORIA[p.categoria]})`, p0.profissionalId)).join('')}
         </select></label>
       ${novo
-        ? `<div class="campo"><span class="rotulo">Datas <small>(toque em um ou mais dias)</small></span><div id="cal" class="cal"></div></div>`
+        ? `<div class="campo campo-cal"><span class="rotulo">Datas <small>(toque em um ou mais dias)</small></span><div id="cal" class="cal"></div></div>`
         : `<label>Data <input type="date" name="data" required value="${p0.data}"></label>`}
       <fieldset class="segmentado turnos"><legend>Turno</legend>
         ${radio('turno', 'diurno', `☀ Diurno <small>${HORARIO_TURNO.diurno} · 12h</small>`, p0.turno)}
@@ -783,7 +785,7 @@ function formPlantao(plantao) {
       if (ignoradas.length) toast(`${ignoradas.length} data(s) ignorada(s): se sobrepunham a plantões já registrados.`, 'alerta');
       if (pagos.length) toast('Atenção: o mês já tinha repasse registrado como pago. Confira o extrato.', 'alerta');
     });
-  });
+  }, novo ? 'largo' : '');
 }
 
 function formImportacao() {
@@ -1018,6 +1020,7 @@ function pgExtratoDetalhe() {
       <button type="button" class="btn sec pequeno" data-act="copiar-pix">Copiar</button></div>` : ''}
     ${seletorMes()}
 
+    <div class="detalhe-extrato"><div>
     <section class="cartao">
       ${ext.linhas.length ? `<ul class="lista extrato">
         ${ext.linhas.map((l) => `
@@ -1030,6 +1033,7 @@ function pgExtratoDetalhe() {
           </li>`).join('')}
       </ul>` : `<p class="dica">Nenhum plantão em ${nomeMes(ui.mes)}.</p>`}
     </section>
+    </div><div>
 
     <section class="cartao resumo">
       <h2>Resumo do período</h2>
@@ -1052,7 +1056,8 @@ function pgExtratoDetalhe() {
       <button type="button" class="btn sec" data-act="pdf-extrato">Extrato (PDF)</button>
       ${ext.total > 0 ? '<button type="button" class="btn sec" data-act="pdf-recibo">Recibo (PDF)</button>' : ''}
       <button type="button" class="btn sec whats" data-act="whatsapp">Enviar por WhatsApp</button>
-    </div>`;
+    </div>
+    </div></div>`;
 }
 
 function formRepasse(ext) {
@@ -1104,6 +1109,7 @@ function pgAjustes() {
   const c = D.config;
   return `
     <h1>Ajustes</h1>
+    <div class="grade-cartoes">
     <section class="cartao">
       <h2>Família Colaboradora</h2>
       <form class="form" id="f-familia">
@@ -1166,7 +1172,8 @@ function pgAjustes() {
         <button type="button" class="btn sec" data-act="sair">Sair</button>
       </div>
       <button type="button" class="link perigo" id="btn-apagar-tudo">Apagar todos os dados deste aparelho</button>
-    </section>`;
+    </section>
+    </div>`;
 }
 
 // Os formulários de Ajustes usam delegação de submit

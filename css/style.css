@@ -410,3 +410,30 @@ select { min-height: 46px; }
   .cartao.lista .item:nth-last-child(3):nth-child(3n+1),
   .cartao.lista .item:nth-last-child(2):nth-child(3n+2) { border-bottom: 0; }
 }
+
+/* ---------- Folha de Registro de Plantões (impressão) ---------- */
+.folha { font-size: 9.5pt; }
+.folha .doc-cab { margin-bottom: 6px; }
+.folha-instr { font-size: 8.5pt; color: #333; margin: 4px 0 8px; }
+.folha-tabela { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.folha-tabela th, .folha-tabela td { border: 1px solid #555; padding: 2px 5px; vertical-align: middle; }
+.folha-tabela th { background: #eef5f3; font-size: 8.5pt; text-align: left; }
+.folha-tabela td { height: 7.2mm; }
+.folha-tabela thead { display: table-header-group; }
+.folha-tabela tr { break-inside: avoid; page-break-inside: avoid; }
+.folha-tabela small { font-size: 7pt; color: #444; }
+.folha-tabela .f-data { width: 17mm; text-align: center; line-height: 1.15; }
+.folha-tabela .f-per { width: 15mm; text-align: center; font-size: 8pt; line-height: 1.1; }
+.folha-tabela .f-cx { width: 11mm; text-align: center; }
+.folha-tabela .f-ass { width: 52mm; }
+.folha-tabela .f-turnos { width: 78mm; font-size: 8pt; white-space: nowrap; }
+.folha-tabela .f-turnos.estreito { width: 58mm; font-size: 7.5pt; }
+.folha-tabela td.f-turnos.estreito { padding-left: 2px; }
+.folha-tabela.escala td { height: 6.4mm; }
+.folha-tabela.escala .dia-ini td { border-top: 1.6px solid #111; }
+.cx { display: inline-block; width: 3.2mm; height: 3.2mm; border: 1px solid #111; vertical-align: -0.5mm; margin-right: 1.5mm; }
+.op { display: inline-block; white-space: nowrap; margin-right: 3.5mm; }
+.op:last-child { margin-right: 0; }
+.f-cx .cx { margin: 0; }
+.f-cx .op { margin: 0; }
+.folha-conferencia { display: flex; justify-content: space-between; gap: 20px; margin-top: 12px; font-size: 9pt; }

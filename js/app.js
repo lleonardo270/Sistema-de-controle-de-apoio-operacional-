@@ -413,6 +413,7 @@ const ACOES = {
     if (ext.total <= 0) return toast('Não há valor de repasse neste mês para gerar recibo.', 'erro');
     imprimir(docRecibo(ext) + '<div class="quebra"></div>' + docExtrato(ext, true), `Recibo de Apoio Voluntario - ${ext.profissional.nome} - ${ui.mes}`);
   },
+  'folha-registro'() { formFolha(); },
   'pdf-mes'() { imprimir(docRelatorioMes(ui.mes), `Resumo de Repasses - ${ui.mes}`); },
   whatsapp() {
     const ext = calcularExtrato(prof(ui.extratoProf), D.plantoes, ui.mes);
@@ -562,6 +563,7 @@ function pgPlantoes() {
       <button type="button" class="btn" data-act="novo-plantao">+ Registrar</button>
       <button type="button" class="btn sec" data-act="importar">Importar planilha</button>
       ${lista.length ? '<button type="button" class="btn sec" data-act="selecionar">Selecionar para apagar</button>' : ''}
+      <button type="button" class="btn sec" data-act="folha-registro">🖨 Folha para impressão</button>
     </div>`}
     ${sel ? `<div class="barra-selecao">
       <span><strong>${sel.size}</strong> selecionado(s)</span>
@@ -1427,6 +1429,104 @@ function docTermo(p) {
       <div><span></span>${esc(p.nome)}<br><small>${linhaCoren(p)}</small></div>
       <div><span></span>Família Colaboradora<br><small>${esc(D.config.familia || '')}</small></div>
     </div>
+  </article>`;
+}
+
+// ======================================================================
+// Folha de Registro de Plantões (para imprimir e preencher à caneta)
+// ======================================================================
+const MODELOS_FOLHA = {
+  escala: { nome: 'Escala do mês', desc: 'Cada dia do mês com uma linha para o Dia (07h–19h) e outra para a Noite (19h–07h): escreva o nome de quem esteve no período e colha a assinatura.' },
+  branco: { nome: 'Em branco', desc: 'Linhas livres com Data, Nome, Turno (caixas para marcar) e Assinatura.' },
+};
+
+function formFolha() {
+  modal('Folha para impressão', `
+    <form class="form">
+      <p class="dica">Imprima, deixe junto ao paciente e preencha à caneta durante o mês. No fechamento, use a folha para conferir e lançar os plantões.</p>
+      <label>Mês de referência <input type="month" name="mes" required value="${ui.mes}"></label>
+      <fieldset class="segmentado"><legend>Modelo</legend>
+        ${Object.entries(MODELOS_FOLHA).map(([k, m]) => radio('modelo', k, m.nome, 'escala')).join('')}</fieldset>
+      <p class="dica" id="desc-modelo"></p>
+      <label id="grp-linhas">Quantidade de linhas <input type="number" name="linhas" min="5" max="200" value="28" inputmode="numeric"></label>
+      <p class="dica" id="dica-linhas">28 linhas cabem em uma folha A4; acima disso, a folha continua na página seguinte.</p>
+      <div class="acoes-form">
+        <button type="button" class="btn sec" data-fechar>Cancelar</button>
+        <button class="btn">🖨 Imprimir / PDF</button>
+      </div>
+    </form>`, (el, fechar) => {
+    const f = el.querySelector('form');
+    const modelo = () => f.querySelector('input[name=modelo]:checked').value;
+    const sync = () => {
+      el.querySelector('#desc-modelo').textContent = MODELOS_FOLHA[modelo()].desc;
+      el.querySelector('#grp-linhas').hidden = modelo() !== 'branco';
+      el.querySelector('#dica-linhas').hidden = modelo() !== 'branco';
+    };
+    f.addEventListener('change', sync);
+    sync();
+    f.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const ym = f.mes.value || ui.mes;
+      const html = modelo() === 'escala'
+        ? docFolhaEscala(ym)
+        : docFolhaBranco(ym, Math.min(200, Math.max(5, Number(f.linhas.value) || 28)));
+      fechar();
+      imprimir(html, `Folha de Registro de Plantoes - ${MODELOS_FOLHA[modelo()].nome} - ${ym}`);
+    });
+  });
+}
+
+const caixa = (rotulo) => `<span class="op"><span class="cx"></span>${rotulo}</span>`;
+const AVISO_FOLHA = 'Folha de uso interno da Família Colaboradora para registro dos plantões e apuração da ajuda de custo voluntária e indenizatória. Não constitui controle de jornada.';
+
+function rodapeFolha() {
+  return `
+    <div class="folha-conferencia">
+      <div>Conferido por: ______________________________________</div>
+      <div>Data: ____/____/________</div>
+    </div>
+    <footer class="doc-rodape">${AVISO_FOLHA}</footer>`;
+}
+
+function diasDoMesISO(ym) {
+  return Array.from({ length: diasDoMes(ym) }, (_, i) => `${ym}-${String(i + 1).padStart(2, '0')}`);
+}
+
+function docFolhaEscala(ym) {
+  const linhas = diasDoMesISO(ym).map((iso) => `
+    <tr class="dia-ini">
+      <td rowspan="2" class="f-data"><strong>${fmtData(iso).slice(0, 5)}</strong><br><small>${diaSemana(iso)}</small></td>
+      <td class="f-per">Dia<br><small>07h–19h</small></td><td></td><td class="f-cx">${caixa('')}</td><td></td>
+    </tr>
+    <tr>
+      <td class="f-per">Noite<br><small>19h–07h</small></td><td></td><td class="f-cx">${caixa('')}</td><td></td>
+    </tr>`).join('');
+  return `
+  <article class="doc folha">
+    ${docCabecalho('Folha de Registro de Plantões', `Escala do mês · Mês de referência: <strong>${nomeMes(ym)}</strong>`)}
+    <p class="folha-instr">Escreva o nome de quem esteve em cada período. Em plantão de 24h, preencha os dois períodos e marque a caixa “24h”.
+    Trocas às 07h e às 19h.</p>
+    <table class="folha-tabela escala">
+      <thead><tr><th class="f-data">Data</th><th class="f-per">Período</th><th>Nome do profissional</th><th class="f-cx">24h</th><th class="f-ass">Assinatura</th></tr></thead>
+      <tbody>${linhas}</tbody>
+    </table>
+    ${rodapeFolha()}
+  </article>`;
+}
+
+function docFolhaBranco(ym, n) {
+  const turnos = `${caixa('D')}${caixa('N')}${caixa('24h·07')}${caixa('24h·19')}`;
+  const linhas = Array.from({ length: n }, () => `
+    <tr><td class="f-data">____/____</td><td></td><td class="f-turnos estreito">${turnos}</td><td class="f-ass"></td></tr>`).join('');
+  return `
+  <article class="doc folha">
+    ${docCabecalho('Folha de Registro de Plantões', `Mês de referência: <strong>${nomeMes(ym)}</strong>`)}
+    <p class="folha-instr">D = Diurno (07h–19h) · N = Noturno (19h–07h) · 24h a partir das 07h ou das 19h.</p>
+    <table class="folha-tabela">
+      <thead><tr><th class="f-data">Data</th><th>Nome do profissional</th><th class="f-turnos estreito">Período / turno</th><th class="f-ass">Assinatura</th></tr></thead>
+      <tbody>${linhas}</tbody>
+    </table>
+    ${rodapeFolha()}
   </article>`;
 }
 

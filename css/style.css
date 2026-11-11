@@ -301,3 +301,5 @@ select { min-height: 46px; }
 .previa { max-height: 260px; overflow: auto; }
 .erro-texto { color: var(--erro); }
 .termo-box code { background: #e8efed; padding: 1px 5px; border-radius: 4px; }
+.pix-linha { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #fff; border: 1.5px solid var(--borda); border-radius: 12px; padding: 8px 8px 8px 12px; margin-bottom: 12px; font-size: .92rem; word-break: break-all; }
+.btn.pequeno { min-height: 36px; padding: 6px 14px; font-size: .88rem; }

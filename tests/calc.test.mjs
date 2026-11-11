@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  calcularExtrato, quintoDiaUtil, valorPorExtenso, cpfValido, fmtBRL, valorUnitario,
+  calcularExtrato, quintoDiaUtil, valorPorExtenso, fmtBRL, valorUnitario,
   parseCSV, interpretarImportacao, interpretarData, pascoa, toISO,
 } from '../js/calc.js';
 
-const fixo = { id: 'a', nome: 'Maria', cpf: '52998224725', categoria: 'fixo', modalidade: 'integral' };
-const cob = { id: 'b', nome: 'João', cpf: '11144477735', categoria: 'cobertura', modalidade: null };
+const fixo = { id: 'a', nome: 'Maria Souza', pix: 'maria@ex.com', categoria: 'fixo', modalidade: 'integral' };
+const cob = { id: 'b', nome: 'João Lima', pix: '11999990000', categoria: 'cobertura', modalidade: null };
 const pl = (profissionalId, data, turno = 'diurno', tipo = 'fixo', modalidade = 'integral') => ({
   profissionalId, data, turno, tipo, modalidade, valorUnitario: tipo === 'fixo' ? valorUnitario(modalidade) : 0,
 });
@@ -75,15 +75,12 @@ test('valor por extenso', () => {
   assert.equal(valorPorExtenso(100), 'cem reais');
 });
 
-test('CPF e moeda', () => {
-  assert.equal(cpfValido('529.982.247-25'), true);
-  assert.equal(cpfValido('111.111.111-11'), false);
-  assert.equal(cpfValido('529.982.247-24'), false);
+test('moeda', () => {
   assert.equal(fmtBRL(1234.5), 'R$ 1.234,50');
 });
 
 test('importação de CSV', () => {
-  const csv = 'Data;Turno;Profissional;Tipo\n03/09/2026;Diurno;maria;\n05/09/2026;noite;111.444.777-35;\n31/02/2026;D;Maria;\n06/09/2026;N;Fulano;';
+  const csv = 'Data;Turno;Profissional;Tipo\n03/09/2026;Diurno;MARIA  souza;\n05/09/2026;noite;João Lima;\n31/02/2026;D;Maria;\n06/09/2026;N;Fulano;';
   const r = interpretarImportacao(parseCSV(csv), [fixo, cob]);
   assert.equal(r.length, 4);
   assert.deepEqual([r[0].data, r[0].turno, r[0].profissional.id, r[0].tipo], ['2026-09-03', 'diurno', 'a', 'fixo']);

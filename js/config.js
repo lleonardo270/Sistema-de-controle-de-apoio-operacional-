@@ -8,7 +8,6 @@ export const CONFIG_PADRAO = {
   familia: '',          // ex.: 'Família Silva'
   paciente: '',         // ex.: 'Sr. José da Silva'
   cidade: '',           // ex.: 'São Paulo/SP' (usada nos recibos e termos)
-  empresa: 'Viventi',   // empresa prestadora de serviços citada nos termos
   valores: {
     alimentacao: 20,    // R$ por plantão de 12h
     transporte: 10,     // R$ por plantão de 12h

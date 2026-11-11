@@ -6,18 +6,18 @@
 //   linha em branco  → novo parágrafo
 //   linhas "1. ..."  → lista numerada;  linhas "- ..." → lista com marcadores
 //   {campo}          → substituído pelo dado correspondente (veja CAMPOS)
-import { fmtBRL, valorPorExtenso, fmtCPF, nomeMes, valorUnitario } from './calc.js';
+import { fmtBRL, valorPorExtenso, nomeMes, valorUnitario } from './calc.js';
 
 export const CAMPOS = {
   familia: 'Nome da família',
   paciente: 'Nome do paciente',
   cidade: 'Cidade',
-  empresa: 'Empresa prestadora de serviços',
   valor_integral: 'Valor integral por plantão',
   valor_alimentacao: 'Parcela de alimentação',
   valor_transporte: 'Parcela de transporte',
   profissional: 'Nome do profissional',
-  cpf: 'CPF do profissional',
+  pix: 'Chave Pix do profissional',
+  coren: 'COREN do profissional',
   valor: 'Valor do repasse',
   valor_extenso: 'Valor do repasse por extenso',
   mes: 'Mês de referência',
@@ -25,7 +25,7 @@ export const CAMPOS = {
   data_limite: 'Data limite do repasse',
 };
 
-const GERAIS = ['familia', 'paciente', 'cidade', 'empresa', 'valor_integral', 'valor_alimentacao', 'valor_transporte'];
+const GERAIS = ['familia', 'paciente', 'cidade', 'valor_integral', 'valor_alimentacao', 'valor_transporte'];
 
 export const TEXTOS_PADRAO = {
   termoFamilia: {
@@ -34,18 +34,18 @@ export const TEXTOS_PADRAO = {
     campos: GERAIS,
     texto: `Este sistema é um **livro-caixa particular** da Família Colaboradora {familia}, destinado exclusivamente ao registro e à conferência da **ajuda de custo voluntária, de caráter indenizatório**, para custeio de alimentação e transporte dos profissionais de enfermagem que atendem {paciente}.
 
-Os valores registrados decorrem de **mera liberalidade da família**, não possuem natureza remuneratória, não constituem contraprestação por serviços e não guardam relação com a empresa prestadora de serviços ({empresa}). O registro de plantões aqui feito serve apenas para apuração do apoio e **não é controle de jornada**.
+Os valores registrados decorrem de **mera liberalidade da família**, não possuem natureza remuneratória, não constituem contraprestação por serviços e não criam qualquer relação entre a família e os profissionais além do apoio aqui registrado. O registro de plantões aqui feito serve apenas para apuração do apoio e **não é controle de jornada**.
 
 A família pode alterar ou encerrar o apoio a qualquer momento, sem que isso gere qualquer direito adquirido.`,
   },
   termoProfissional: {
     titulo: 'Termo de Ciência do Profissional',
     onde: 'Exibido no cadastro do profissional e impresso pelo botão 📄.',
-    campos: [...GERAIS, 'profissional', 'cpf'],
-    texto: `Eu, **{profissional}**, CPF **{cpf}**, declaro estar ciente de que:
+    campos: [...GERAIS, 'profissional', 'pix', 'coren'],
+    texto: `Eu, **{profissional}**, declaro estar ciente de que:
 
 1. A ajuda de custo concedida pela Família Colaboradora {familia} decorre de **mera liberalidade** da família, tem caráter **voluntário e indenizatório** e se destina exclusivamente ao suporte de custos de **deslocamento (transporte) e alimentação**.
-2. O valor **não possui natureza salarial**, não integra qualquer remuneração e **não gera vínculo empregatício** com a família, com o paciente ou com a empresa prestadora de serviços ({empresa}).
+2. O valor **não possui natureza salarial**, não integra qualquer remuneração e **não gera vínculo empregatício** com a família ou com o paciente.
 3. O apoio é ativado ao completar o **4º plantão fixo** no mês, com repasse retroativo dos plantões 1 a 3 do mesmo mês. Plantões de cobertura não entram nessa contagem.
 4. Referência por plantão de 12h: {valor_integral} (alimentação {valor_alimentacao} + transporte {valor_transporte}) ou, caso eu opte por me alimentar no local, apenas transporte ({valor_transporte}).
 5. O repasse do mês é feito até o **5º dia útil do mês subsequente**, podendo a família alterar ou encerrar o apoio a qualquer momento, sem que isso gere direito adquirido.`,
@@ -59,10 +59,10 @@ A família pode alterar ou encerrar o apoio a qualquer momento, sem que isso ger
   recibo: {
     titulo: 'Recibo de Apoio Voluntário',
     onde: 'Corpo do recibo em PDF.',
-    campos: [...GERAIS, 'profissional', 'cpf', 'valor', 'valor_extenso', 'mes', 'plantoes'],
-    texto: `Eu, **{profissional}**, inscrito(a) no CPF sob o nº **{cpf}**, declaro que recebi da **Família Colaboradora {familia}** a importância de **{valor}** ({valor_extenso}), a título de **ajuda de custo voluntária de caráter indenizatório**, destinada ao custeio de despesas de alimentação e/ou transporte relativas aos {plantoes} plantões registrados no mês de referência **{mes}**, conforme Extrato de Repasse.
+    campos: [...GERAIS, 'profissional', 'pix', 'coren', 'valor', 'valor_extenso', 'mes', 'plantoes'],
+    texto: `Eu, **{profissional}**, declaro que recebi da **Família Colaboradora {familia}** a importância de **{valor}** ({valor_extenso}), a título de **ajuda de custo voluntária de caráter indenizatório**, destinada ao custeio de despesas de alimentação e/ou transporte relativas aos {plantoes} plantões registrados no mês de referência **{mes}**, conforme Extrato de Repasse.
 
-Declaro estar ciente de que o valor decorre de mera liberalidade da família, **não possui natureza salarial** ou remuneratória, não constitui contraprestação por serviços e **não gera vínculo empregatício** com a família, com o paciente ou com a empresa prestadora de serviços ({empresa}), dando plena e geral quitação quanto ao valor e ao período acima.`,
+Declaro estar ciente de que o valor decorre de mera liberalidade da família, **não possui natureza salarial** ou remuneratória, não constitui contraprestação por serviços e **não gera vínculo empregatício** com a família ou com o paciente, dando plena e geral quitação quanto ao valor e ao período acima.`,
   },
   declaracaoExtrato: {
     titulo: 'Declaração do Extrato',
@@ -96,11 +96,11 @@ export function textoPersonalizado(cfg, chave) {
 export function montarCampos(cfg = {}, prof = null, ext = null) {
   const v = cfg.valores || { alimentacao: 0, transporte: 0 };
   return {
-    familia: cfg.familia, paciente: cfg.paciente, cidade: cfg.cidade, empresa: cfg.empresa,
+    familia: cfg.familia, paciente: cfg.paciente, cidade: cfg.cidade,
     valor_integral: fmtBRL(valorUnitario('integral', v)),
     valor_alimentacao: fmtBRL(v.alimentacao),
     valor_transporte: fmtBRL(valorUnitario('transporte', v)),
-    profissional: prof?.nome, cpf: prof?.cpf ? fmtCPF(prof.cpf) : '',
+    profissional: prof?.nome, pix: prof?.pix, coren: prof?.coren,
     valor: ext ? fmtBRL(ext.total) : '', valor_extenso: ext ? valorPorExtenso(ext.total) : '',
     mes: ext ? nomeMes(ext.mes) : '', plantoes: ext ? String(ext.plantoesFixos) : '',
     data_limite: ext?.dataLimite ? ext.dataLimite.split('-').reverse().join('/') : '',

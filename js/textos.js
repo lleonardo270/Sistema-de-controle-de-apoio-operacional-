@@ -43,7 +43,7 @@ A família pode alterar ou encerrar o apoio a qualquer momento, sem que isso ger
     titulo: 'Termo de Ciência do Profissional',
     onde: 'Exibido no cadastro do profissional e impresso pelo botão 📄.',
     campos: [...GERAIS, 'profissional', 'cpf', 'pix', 'coren'],
-    texto: `Eu, **{profissional}**, CPF **{cpf}**, declaro estar ciente de que:
+    texto: `Eu, **{profissional}**, portador(a) do CPF nº **{cpf}**, declaro estar ciente de que:
 
 1. A ajuda de custo concedida pela Família Colaboradora {familia} decorre de **mera liberalidade** da família, tem caráter **voluntário e indenizatório** e se destina exclusivamente ao suporte de custos de **deslocamento (transporte) e alimentação**.
 2. O valor **não possui natureza salarial**, não integra qualquer remuneração e **não gera vínculo empregatício** com a família ou com o paciente.
@@ -61,7 +61,7 @@ A família pode alterar ou encerrar o apoio a qualquer momento, sem que isso ger
     titulo: 'Recibo de Apoio Voluntário',
     onde: 'Corpo do recibo em PDF.',
     campos: [...GERAIS, 'profissional', 'cpf', 'pix', 'coren', 'valor', 'valor_extenso', 'mes', 'plantoes'],
-    texto: `Eu, **{profissional}**, CPF **{cpf}**, declaro que recebi da **Família Colaboradora {familia}** a importância de **{valor}** ({valor_extenso}), a título de **ajuda de custo voluntária de caráter indenizatório**, destinada ao custeio de despesas de alimentação e/ou transporte relativas aos {plantoes} plantões registrados no mês de referência **{mes}**, conforme Extrato de Repasse.
+    texto: `Eu, **{profissional}**, portador(a) do CPF nº **{cpf}**, declaro que recebi da **Família Colaboradora {familia}** a importância de **{valor}** ({valor_extenso}), a título de **ajuda de custo voluntária de caráter indenizatório**, destinada ao custeio de despesas de alimentação e/ou transporte relativas aos {plantoes} plantões registrados no mês de referência **{mes}**, conforme Extrato de Repasse.
 
 Declaro estar ciente de que o valor decorre de mera liberalidade da família, **não possui natureza salarial** ou remuneratória, não constitui contraprestação por serviços e **não gera vínculo empregatício** com a família ou com o paciente, dando plena e geral quitação quanto ao valor e ao período acima.`,
   },

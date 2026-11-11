@@ -28,7 +28,7 @@ test('texto personalizado substitui o padrão', () => {
   assert.match(termoFamilia({ ...cfg, textos: {} }), /livro-caixa particular/);
   const r = textoRecibo(cfg, { nome: 'Maria', cpf: '52998224725', pix: 'maria@ex.com', coren: 'X1' }, { total: 120, mes: '2026-09', plantoesFixos: 4 });
   assert.match(r, /cento e vinte reais/);
-  assert.match(r, /^<p>Eu, <strong>Maria<\/strong>, CPF <strong>529\.982\.247-25<\/strong>, declaro/);
+  assert.match(r, /^<p>Eu, <strong>Maria<\/strong>, portador\(a\) do CPF nº <strong>529\.982\.247-25<\/strong>, declaro/);
   assert.doesNotMatch(r, /empresa|maria@ex\.com|X1/);
   assert.match(r, /Setembro \/ 2026/);
 });

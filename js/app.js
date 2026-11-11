@@ -1346,10 +1346,16 @@ function imprimir(html, nomeArquivo) {
   setTimeout(() => window.print(), 50);
 }
 
-function docCabecalho(titulo, subtitulo = '') {
+function docCabecalho(titulo, subtitulo = '', { familia = true } = {}) {
   return `<header class="doc-cab"><div><h1>${titulo}</h1>${subtitulo ? `<p>${subtitulo}</p>` : ''}</div>
-    <div class="doc-familia">Família Colaboradora<br><strong>${esc(D.config.familia || '—')}</strong></div></header>`;
+    ${familia ? `<div class="doc-familia">Família Colaboradora<br><strong>${esc(D.config.familia || '—')}</strong></div>` : ''}</header>`;
 }
+
+/** Linha sob a assinatura do profissional: COREN do cadastro. */
+const linhaCoren = (p) => {
+  if (!p.coren) return 'COREN ____________';
+  return /^coren/i.test(p.coren.trim()) ? esc(p.coren) : `COREN ${esc(p.coren)}`;
+};
 
 function dataPorExtenso(iso) {
   const d = parseISO(iso);
@@ -1394,13 +1400,13 @@ function docRecibo(ext) {
   const data = r ? dataPorExtenso(r.pagoEm) : '____ de ____________ de ______';
   return `
   <article class="doc">
-    ${docCabecalho('Recibo de Apoio Voluntário', 'Ajuda de Custo Indenizatória – Alimentação e Transporte')}
+    ${docCabecalho('Recibo de Apoio Voluntário', 'Ajuda de Custo Indenizatória – Alimentação e Transporte', { familia: false })}
     <div class="doc-valor">${fmtBRL(ext.total)}</div>
     <div class="doc-texto">${textoRecibo(D.config, p, ext)}</div>
     ${r ? `<p class="doc-linha">Forma do repasse: ${esc(r.forma)}${r.obs ? ' · ' + esc(r.obs) : ''}</p>` : ''}
     <p class="doc-local">${esc(local)}, ${data}.</p>
     <div class="doc-assinaturas">
-      <div><span></span>${esc(p.nome)}<br><small>CPF ${p.cpf ? fmtCPF(p.cpf) : '___.___.___-__'}</small></div>
+      <div><span></span>${esc(p.nome)}<br><small>${linhaCoren(p)}</small></div>
       <div><span></span>Família Colaboradora<br><small>${esc(D.config.familia || '')}</small></div>
     </div>
     <p class="doc-nota">Confirmação digital (opcional): ( ) Recebido e conferido via mensagem em ___/___/______.</p>
@@ -1418,7 +1424,7 @@ function docTermo(p) {
     </div>
     <p class="doc-local">${esc(D.config.cidade || '____________________')}, ${p.termoAceitoEm ? dataPorExtenso(p.termoAceitoEm.slice(0, 10)) : '____ de ____________ de ______'}.</p>
     <div class="doc-assinaturas">
-      <div><span></span>${esc(p.nome)}<br><small>CPF ${p.cpf ? fmtCPF(p.cpf) : '___.___.___-__'}</small></div>
+      <div><span></span>${esc(p.nome)}<br><small>${linhaCoren(p)}</small></div>
       <div><span></span>Família Colaboradora<br><small>${esc(D.config.familia || '')}</small></div>
     </div>
   </article>`;

@@ -100,6 +100,7 @@ test('turno de 24h vale por dois plantões de 12h', () => {
   assert.equal(e.total, 120);
   assert.deepEqual(e.linhas.map((l) => l.status), ['Validado (1º e 2º)', 'Validado (3º)', 'Validado (4º)*']);
   assert.equal(e.linhas[0].subtotal, 60);
+  assert.deepEqual([e.fixos12h, e.fixos24h], [2, 1]);
   assert.equal(e.valorRetroativo, 90);
 });
 

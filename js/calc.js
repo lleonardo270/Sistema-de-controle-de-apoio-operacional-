@@ -203,6 +203,8 @@ export function calcularExtrato(prof, plantoes, ym) {
     totalPlantoes: doMes.length,
     // contagens em plantões de 12h (24h = 2)
     plantoesFixos: equivalentes,
+    fixos12h: fixos.filter((p) => pesoTurno(p.turno) === 1).length,
+    fixos24h: fixos.filter((p) => pesoTurno(p.turno) === 2).length,
     plantoesCobertura: soma(doMes.filter((p) => !contaParaRepasse(p)), (p) => pesoTurno(p.turno)),
     turnos24h: doMes.filter((p) => p.turno === '24h').length,
     refeicoesNoLocal: soma(linhas.filter((l) => l.refeicaoNoLocal), (l) => l.peso),

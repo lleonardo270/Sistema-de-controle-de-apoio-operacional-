@@ -32,3 +32,12 @@ test('texto personalizado substitui o padrão', () => {
   assert.doesNotMatch(r, /empresa|maria@ex\.com|X1/);
   assert.match(r, /Setembro \/ 2026/);
 });
+
+test('recibo informa plantões de 12 horas e composição com 24h', () => {
+  const cfg = { familia: 'Silva', valores: { alimentacao: 20, transporte: 10 } };
+  const p = { nome: 'Maria', cpf: '52998224725' };
+  const so12 = textoRecibo(cfg, p, { total: 120, mes: '2026-09', plantoesFixos: 4, fixos12h: 4, fixos24h: 0 });
+  assert.match(so12, /relativas a <strong>4 plantões de 12 horas<\/strong> registrados/);
+  const com24 = textoRecibo(cfg, p, { total: 660, mes: '2026-10', plantoesFixos: 22, fixos12h: 18, fixos24h: 2 });
+  assert.match(com24, /<strong>22 plantões de 12 horas<\/strong> \(18 de 12 horas e 2 de 24 horas, estes contados em dobro\) registrados/);
+});

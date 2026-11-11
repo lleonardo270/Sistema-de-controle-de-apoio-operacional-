@@ -22,7 +22,8 @@ export const CAMPOS = {
   valor: 'Valor do repasse',
   valor_extenso: 'Valor do repasse por extenso',
   mes: 'Mês de referência',
-  plantoes: 'Quantidade de plantões fixos',
+  plantoes: 'Quantidade de plantões fixos, em plantões de 12 horas (24h conta como 2)',
+  plantoes_detalhe: 'Composição quando há plantões de 24h, ex.: (18 de 12 horas e 2 de 24 horas...)',
   data_limite: 'Data limite do repasse',
 };
 
@@ -60,8 +61,8 @@ A família pode alterar ou encerrar o apoio a qualquer momento, sem que isso ger
   recibo: {
     titulo: 'Recibo de Apoio Voluntário',
     onde: 'Corpo do recibo em PDF.',
-    campos: [...GERAIS, 'profissional', 'cpf', 'pix', 'coren', 'valor', 'valor_extenso', 'mes', 'plantoes'],
-    texto: `Eu, **{profissional}**, portador(a) do CPF nº **{cpf}**, declaro que recebi da **Família Colaboradora {familia}** a importância de **{valor}** ({valor_extenso}), a título de **ajuda de custo voluntária de caráter indenizatório**, destinada ao custeio de despesas de alimentação e/ou transporte relativas aos {plantoes} plantões registrados no mês de referência **{mes}**, conforme Extrato de Repasse.
+    campos: [...GERAIS, 'profissional', 'cpf', 'pix', 'coren', 'valor', 'valor_extenso', 'mes', 'plantoes', 'plantoes_detalhe'],
+    texto: `Eu, **{profissional}**, portador(a) do CPF nº **{cpf}**, declaro que recebi da **Família Colaboradora {familia}** a importância de **{valor}** ({valor_extenso}), a título de **ajuda de custo voluntária de caráter indenizatório**, destinada ao custeio de despesas de alimentação e/ou transporte relativas a **{plantoes} plantões de 12 horas**{plantoes_detalhe} registrados no mês de referência **{mes}**, conforme Extrato de Repasse.
 
 Declaro estar ciente de que o valor decorre de mera liberalidade da família, **não possui natureza salarial** ou remuneratória, não constitui contraprestação por serviços e **não gera vínculo empregatício** com a família ou com o paciente, dando plena e geral quitação quanto ao valor e ao período acima.`,
   },
@@ -82,6 +83,8 @@ Declaro estar ciente de que o valor decorre de mera liberalidade da família, **
 // ---------- Montagem ----------
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const VAZIO = '________';
+// campos que somem quando não se aplicam (em vez de virar linha em branco)
+const OPCIONAIS = ['plantoes_detalhe'];
 
 export function obterTexto(cfg, chave) {
   const t = cfg?.textos?.[chave];
@@ -104,6 +107,7 @@ export function montarCampos(cfg = {}, prof = null, ext = null) {
     profissional: prof?.nome, cpf: prof?.cpf ? fmtCPF(prof.cpf) : '', pix: prof?.pix, coren: prof?.coren,
     valor: ext ? fmtBRL(ext.total) : '', valor_extenso: ext ? valorPorExtenso(ext.total) : '',
     mes: ext ? nomeMes(ext.mes) : '', plantoes: ext ? String(ext.plantoesFixos) : '',
+    plantoes_detalhe: ext?.fixos24h ? ` (${ext.fixos12h} de 12 horas e ${ext.fixos24h} de 24 horas, estes contados em dobro)` : '',
     data_limite: ext?.dataLimite ? ext.dataLimite.split('-').reverse().join('/') : '',
   };
 }
@@ -111,7 +115,7 @@ export function montarCampos(cfg = {}, prof = null, ext = null) {
 function trocarCampos(s, campos, escapar) {
   return s.replace(/\{(\w+)\}/g, (m, k) => {
     if (!(k in CAMPOS)) return m;
-    const val = campos[k] ? String(campos[k]) : VAZIO;
+    const val = campos[k] ? String(campos[k]) : (OPCIONAIS.includes(k) ? '' : VAZIO);
     return escapar ? esc(val) : val;
   });
 }

@@ -511,7 +511,7 @@ function linhaResumo(e, comMes = false) {
   return `
     <li class="item clicavel" data-act="ver-extrato" data-id="${e.profissional.id}" data-mes="${e.mes}">
       <div class="item-info"><strong>${esc(e.profissional.nome)}</strong>
-        <span class="dica">${comMes ? nomeMes(e.mes) + ' · ' : ''}${e.plantoesFixos} plantões fixos</span></div>
+        <span class="dica">${comMes ? nomeMes(e.mes) + ' · ' : ''}${e.plantoesFixos} plantões de 12h</span></div>
       <div class="item-dir"><strong>${fmtBRL(e.total)}</strong>${chip(st.txt, st.cls)}</div>
     </li>`;
 }
@@ -525,7 +525,7 @@ function progresso(e) {
   }
   const pct = Math.min(100, (e.plantoesFixos / LIMIAR_ELEGIBILIDADE) * 100);
   const txt = e.elegivel
-    ? `Elegível · ${e.plantoesFixos} plantões · acumulado ${fmtBRL(e.total)}`
+    ? `Elegível · ${e.plantoesFixos} plantões de 12h · acumulado ${fmtBRL(e.total)}`
     : `${e.plantoesFixos} de ${LIMIAR_ELEGIBILIDADE} · falta(m) ${e.faltam} para ativar${e.valorPotencial ? ` (${fmtBRL(e.valorPotencial)} a liberar)` : ''}`;
   return `
     <li class="item clicavel" data-act="ver-extrato" data-id="${p.id}" data-mes="${e.mes}">
@@ -1043,7 +1043,7 @@ function pgExtratoDetalhe() {
     <section class="cartao resumo">
       <h2>Resumo do período</h2>
       <dl>
-        <dt>Plantões fixos apurados</dt><dd>${ext.plantoesFixos}</dd>
+        <dt>Plantões apurados (de 12h)</dt><dd>${ext.plantoesFixos}${ext.fixos24h ? ` <small>(${ext.fixos12h} de 12h + ${ext.fixos24h} de 24h)</small>` : ''}</dd>
         ${ext.plantoesCobertura ? `<dt>Plantões de cobertura</dt><dd>${ext.plantoesCobertura}</dd>` : ''}
         <dt>Refeições fornecidas no local</dt><dd>${ext.refeicoesNoLocal}</dd>
         <dt>Ajuste retroativo (1º a 3º)</dt><dd>${ext.elegivel ? `Aplicado · ${fmtBRL(ext.valorRetroativo)}` : ext.plantoesFixos ? `Aguardando ${LIMIAR_ELEGIBILIDADE}º plantão (falta(m) ${ext.faltam})` : '—'}</dd>
@@ -1098,7 +1098,7 @@ function textoWhatsApp(ext) {
     '',
     ...ext.linhas.map((l) => `${fmtData(l.plantao.data)} ${NOME_TURNO[l.plantao.turno]} – ${l.status} – ${fmtBRL(l.subtotal)}`),
     '',
-    `Plantões apurados: ${ext.plantoesFixos}`,
+    `Plantões apurados: ${ext.plantoesFixos} de 12 horas${ext.fixos24h ? ` (${ext.fixos12h} de 12h e ${ext.fixos24h} de 24h)` : ''}`,
     `Ajuste retroativo (1º a 3º): ${ext.elegivel ? 'aplicado' : 'não aplicável'}`,
     `*Valor total do repasse: ${fmtBRL(ext.total)}*`,
     st.pago ? `Repassado em ${fmtData(st.r.pagoEm)} (${st.r.forma})` : `Data limite: ${fmtData(ext.dataLimite)}`,
@@ -1380,7 +1380,7 @@ function docExtrato(ext, anexo = false) {
     ${ext.elegivel ? '<p class="doc-nota">*Ativou a regra de elegibilidade e o retroativo.</p>' : ''}
     <h2>Resumo do período</h2>
     <table class="doc-resumo">
-      <tr><td>Plantões apurados (fixos)</td><td>${ext.plantoesFixos}</td></tr>
+      <tr><td>Plantões apurados (em plantões de 12 horas; 24h conta como 2)</td><td>${ext.plantoesFixos}${ext.fixos24h ? ` (${ext.fixos12h} de 12h + ${ext.fixos24h} de 24h)` : ''}</td></tr>
       ${ext.plantoesCobertura ? `<tr><td>Plantões de cobertura (sem repasse)</td><td>${ext.plantoesCobertura}</td></tr>` : ''}
       <tr><td>Refeições fornecidas no local</td><td>${ext.refeicoesNoLocal}</td></tr>
       <tr><td>Ajuste retroativo (plantões 1 a 3)</td><td>${ext.elegivel ? `Aplicado (${fmtBRL(ext.valorRetroativo)})` : `Não aplicado (mínimo de ${LIMIAR_ELEGIBILIDADE} plantões fixos)`}</td></tr>

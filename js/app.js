@@ -1348,9 +1348,11 @@ function imprimir(html, nomeArquivo) {
   setTimeout(() => window.print(), 50);
 }
 
-function docCabecalho(titulo, subtitulo = '', { familia = true } = {}) {
-  return `<header class="doc-cab"><div><h1>${titulo}</h1>${subtitulo ? `<p>${subtitulo}</p>` : ''}</div>
-    ${familia ? `<div class="doc-familia">Família Colaboradora<br><strong>${esc(D.config.familia || '—')}</strong></div>` : ''}</header>`;
+function docCabecalho(titulo, subtitulo = '', { familia = true, paciente = false } = {}) {
+  let lado = '';
+  if (paciente) lado = `<div class="doc-familia">Paciente<br><strong>${D.config.paciente ? esc(D.config.paciente) : '______________________'}</strong></div>`;
+  else if (familia) lado = `<div class="doc-familia">Família Colaboradora<br><strong>${esc(D.config.familia || '—')}</strong></div>`;
+  return `<header class="doc-cab"><div><h1>${titulo}</h1>${subtitulo ? `<p>${subtitulo}</p>` : ''}</div>${lado}</header>`;
 }
 
 /** Linha sob a assinatura do profissional: COREN do cadastro. */
@@ -1436,7 +1438,7 @@ function docTermo(p) {
 // Folha de Registro de Plantões (para imprimir e preencher à caneta)
 // ======================================================================
 const MODELOS_FOLHA = {
-  escala: { nome: 'Escala do mês', desc: 'Cada dia do mês com uma linha para o Dia (07h–19h) e outra para a Noite (19h–07h): escreva o nome de quem esteve no período e colha a assinatura.' },
+  escala: { nome: 'Escala do mês', desc: 'Cada dia do mês com uma linha para o Dia (07h–19h) e outra para a Noite (19h–07h): escreva o nome de quem esteve no período, marque “12h” e colha a assinatura.' },
   branco: { nome: 'Em branco', desc: 'Linhas livres com Data, Nome, Turno (caixas para marcar) e Assinatura.' },
 };
 
@@ -1445,6 +1447,7 @@ function formFolha() {
     <form class="form">
       <p class="dica">Imprima, deixe junto ao paciente e preencha à caneta durante o mês. No fechamento, use a folha para conferir e lançar os plantões.</p>
       <label>Mês de referência <input type="month" name="mes" required value="${ui.mes}"></label>
+      ${D.config.paciente ? '' : '<p class="aviso">O nome do paciente aparece no topo da folha. Preencha em <strong>Ajustes → Nome do paciente</strong> (por enquanto sairá em branco).</p>'}
       <fieldset class="segmentado"><legend>Modelo</legend>
         ${Object.entries(MODELOS_FOLHA).map(([k, m]) => radio('modelo', k, m.nome, 'escala')).join('')}</fieldset>
       <p class="dica" id="desc-modelo"></p>
@@ -1503,11 +1506,11 @@ function docFolhaEscala(ym) {
     </tr>`).join('');
   return `
   <article class="doc folha">
-    ${docCabecalho('Folha de Registro de Plantões', `Escala do mês · Mês de referência: <strong>${nomeMes(ym)}</strong>`)}
-    <p class="folha-instr">Escreva o nome de quem esteve em cada período. Em plantão de 24h, preencha os dois períodos e marque a caixa “24h”.
-    Trocas às 07h e às 19h.</p>
+    ${docCabecalho('Folha de Registro de Plantões', `Escala do mês · Mês de referência: <strong>${nomeMes(ym)}</strong>`, { paciente: true })}
+    <p class="folha-instr">Cada linha é um período de 12 horas. Escreva o nome de quem esteve no período, marque a caixa “12h” e assine.
+    Plantão de 24h: o mesmo nome em dois períodos seguidos, com as duas caixas marcadas. Trocas às 07h e às 19h.</p>
     <table class="folha-tabela escala">
-      <thead><tr><th class="f-data">Data</th><th class="f-per">Período</th><th>Nome do profissional</th><th class="f-cx">24h</th><th class="f-ass">Assinatura</th></tr></thead>
+      <thead><tr><th class="f-data">Data</th><th class="f-per">Período</th><th>Nome do profissional</th><th class="f-cx">12h</th><th class="f-ass">Assinatura</th></tr></thead>
       <tbody>${linhas}</tbody>
     </table>
     ${rodapeFolha()}
@@ -1520,7 +1523,7 @@ function docFolhaBranco(ym, n) {
     <tr><td class="f-data">____/____</td><td></td><td class="f-turnos estreito">${turnos}</td><td class="f-ass"></td></tr>`).join('');
   return `
   <article class="doc folha">
-    ${docCabecalho('Folha de Registro de Plantões', `Mês de referência: <strong>${nomeMes(ym)}</strong>`)}
+    ${docCabecalho('Folha de Registro de Plantões', `Mês de referência: <strong>${nomeMes(ym)}</strong>`, { paciente: true })}
     <p class="folha-instr">D = Diurno (07h–19h) · N = Noturno (19h–07h) · 24h a partir das 07h ou das 19h.</p>
     <table class="folha-tabela">
       <thead><tr><th class="f-data">Data</th><th>Nome do profissional</th><th class="f-turnos estreito">Período / turno</th><th class="f-ass">Assinatura</th></tr></thead>

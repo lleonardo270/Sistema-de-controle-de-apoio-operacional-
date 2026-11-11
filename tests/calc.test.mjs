@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   calcularExtrato, quintoDiaUtil, valorPorExtenso, fmtBRL, valorUnitario,
   parseCSV, interpretarImportacao, interpretarData, pascoa, toISO,
+  plantoesConflitam, periodosOcupados, interpretarTurno, compararPlantoes,
 } from '../js/calc.js';
 
 const fixo = { id: 'a', nome: 'Maria Souza', pix: 'maria@ex.com', categoria: 'fixo', modalidade: 'integral' };
@@ -120,4 +121,46 @@ test('24h sozinho não atinge o limiar; transporte 24h = R$ 20', () => {
   const e2 = calcularExtrato(fixo, t, '2026-09');
   assert.equal(e2.total, 40);
   assert.equal(e2.refeicoesNoLocal, 4);
+});
+
+test('trocas às 07h e 19h: períodos ocupados', () => {
+  assert.deepEqual(periodosOcupados({ data: '2026-10-01', turno: 'diurno' }), ['2026-10-01|D']);
+  assert.deepEqual(periodosOcupados({ data: '2026-10-01', turno: 'noturno' }), ['2026-10-01|N']);
+  assert.deepEqual(periodosOcupados({ data: '2026-10-01', turno: '24h' }), ['2026-10-01|D', '2026-10-01|N']);
+  assert.deepEqual(periodosOcupados({ data: '2026-10-31', turno: '24h19' }), ['2026-10-31|N', '2026-11-01|D']);
+});
+
+test('conflitos de horário', () => {
+  const c = (a, b) => plantoesConflitam(a, b);
+  // 24h às 19h do dia 1 ocupa a noite do dia 1 e o dia 2
+  const p19 = { data: '2026-10-01', turno: '24h19' };
+  assert.equal(c(p19, { data: '2026-10-02', turno: 'diurno' }), true);
+  assert.equal(c(p19, { data: '2026-10-01', turno: 'noturno' }), true);
+  assert.equal(c(p19, { data: '2026-10-01', turno: 'diurno' }), false); // 07h–19h do dia 1 termina quando o 24h começa
+  assert.equal(c(p19, { data: '2026-10-02', turno: 'noturno' }), false); // começa às 19h do dia 2, quando o 24h termina
+  assert.equal(c(p19, { data: '2026-10-02', turno: '24h19' }), false); // 24h seguidos (19h→19h→19h)
+  assert.equal(c(p19, { data: '2026-10-02', turno: '24h' }), true);
+  // 24h às 07h do dia 1
+  const p07 = { data: '2026-10-01', turno: '24h' };
+  assert.equal(c(p07, { data: '2026-10-02', turno: 'diurno' }), false);
+  assert.equal(c(p07, { data: '2026-09-30', turno: '24h19' }), true); // 24h19 de 30/09 vai até 19h de 01/10
+  assert.equal(c({ data: '2026-10-01', turno: 'diurno' }, { data: '2026-10-01', turno: 'noturno' }), false);
+});
+
+test('24h às 19h conta no mês em que começa e vale 2', () => {
+  const ps = [pl('a', '2026-09-30', '24h19'), pl('a', '2026-09-28'), pl('a', '2026-09-29', 'noturno')];
+  const set = calcularExtrato(fixo, ps, '2026-09');
+  assert.equal(set.plantoesFixos, 4);
+  assert.equal(set.total, 120);
+  assert.equal(calcularExtrato(fixo, ps, '2026-10').totalPlantoes, 0);
+});
+
+test('turnos na planilha e ordenação', () => {
+  assert.equal(interpretarTurno('24h'), '24h');
+  assert.equal(interpretarTurno('24h 07h'), '24h');
+  assert.equal(interpretarTurno('24h 19h'), '24h19');
+  assert.equal(interpretarTurno('24H-19'), '24h19');
+  assert.equal(interpretarTurno('24h noite'), '24h19');
+  const ord = [{ data: '2026-10-01', turno: '24h19' }, { data: '2026-10-01', turno: 'diurno' }].sort(compararPlantoes);
+  assert.deepEqual(ord.map((x) => x.turno), ['diurno', '24h19']);
 });

@@ -9,7 +9,7 @@ apurar a **ajuda de custo voluntária e indenizatória** (alimentação e transp
 | Requisito | Onde está |
 |---|---|
 | RF01 – Cadastro de profissionais (nome completo, chave Pix, COREN opcional, categoria Fixo ou Cobertura/Standby, modalidade Integral ou Apenas Transporte com aceite prévio) | aba **Profissionais** |
-| RF02 – Registro manual de plantões (diurno ou noturno de 12h, ou 24 horas = 2 plantões de 12h), vários dias de uma vez pelo calendário, seleção múltipla para apagar e importação de planilha CSV | aba **Plantões** |
+| RF02 – Registro manual de plantões (diurno 07h–19h, noturno 19h–07h, ou 24h iniciando às 07h ou às 19h = 2 plantões de 12h), vários dias de uma vez pelo calendário, bloqueio de horários sobrepostos, seleção múltipla para apagar e importação de planilha CSV | aba **Plantões** |
 | RF03 – Cálculo automático: regra do 4º plantão fixo, retroativo do 1º ao 3º, R$ 30,00 ou R$ 10,00 por plantão; cobertura não conta | `js/calc.js` |
 | RF04 – Extrato mensal detalhado por profissional | aba **Extratos** |
 | RF05 – Recibo em PDF com texto de caráter voluntário e indenizatório, pronto para assinatura | Extratos → **Recibo (PDF)** |
@@ -40,6 +40,20 @@ o aceite da opção “Apenas Transporte”, o recibo, a declaração do extrato
   automaticamente (toque no campo para inseri-lo).
 - Há pré-visualização com dados de exemplo e o botão **Restaurar padrão**.
 - Os textos editados ficam salvos junto com os dados (e vão no backup).
+
+## Turnos e trocas de plantão
+
+As trocas acontecem às **07h** e às **19h**:
+
+| Turno | Horário | Equivale a |
+|---|---|---|
+| Diurno | 07h–19h | 1 plantão |
+| Noturno | 19h–07h do dia seguinte | 1 plantão |
+| 24h início 07h | 07h–07h do dia seguinte | 2 plantões |
+| 24h início 19h | 19h–19h do dia seguinte | 2 plantões |
+
+O plantão conta no mês da data em que **começa**. O sistema impede lançar plantões com horários sobrepostos
+para o mesmo profissional (ex.: um 24h que começa às 19h do dia 7 bloqueia o diurno do dia 8).
 
 ## Como os dados são guardados (importante)
 
@@ -75,7 +89,7 @@ Data;Turno;Profissional;Tipo
 05/09/2026;Noturno;Maria Souza;
 ```
 
-“Profissional” deve ser o nome completo como cadastrado (maiúsculas, acentos e espaços extras são ignorados).
+Turno: `Diurno`, `Noturno`, `24h` (início 07h) ou `24h 19h` (início 19h). “Profissional” deve ser o nome completo como cadastrado (maiúsculas, acentos e espaços extras são ignorados).
 
 ## Desenvolvimento
 

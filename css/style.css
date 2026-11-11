@@ -306,7 +306,9 @@ select { min-height: 46px; }
 
 /* ---------- Turno 24h e seleção múltipla ---------- */
 .chip.t24 { background: #fde7f3; color: #9d174d; }
-.segmentado.turnos .seg { flex-basis: 96px; }
+.segmentado.turnos { display: grid; grid-template-columns: 1fr 1fr; }
+.segmentado.turnos legend { grid-column: 1 / -1; }
+.turno-nota { grid-column: 1 / -1; margin: 0; }
 .seg span small { display: block; font-size: .72rem; font-weight: 500; color: var(--suave); }
 .seg input:checked + span small { color: var(--pri-esc); }
 .seg span { flex-direction: column; line-height: 1.2; }

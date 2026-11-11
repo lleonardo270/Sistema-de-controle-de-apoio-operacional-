@@ -1,7 +1,7 @@
 import {
   MESES, VALORES_PADRAO, LIMIAR_ELEGIBILIDADE, fmtBRL, valorUnitario, hojeISO, fmtData, diaSemana,
   mesDe, somarMeses, mesAnterior, nomeMes, diasDoMes, parseISO, toISO, quintoDiaUtil, calcularExtrato,
-  compararPlantoes, round2, semAcento, pesoTurno, turnosConflitam, parseCSV, interpretarImportacao,
+  compararPlantoes, round2, semAcento, pesoTurno, plantoesConflitam, periodosOcupados, HORARIO_TURNO, parseCSV, interpretarImportacao,
 } from './calc.js';
 import * as store from './store.js';
 import {
@@ -24,9 +24,13 @@ const chaveRepasse = (profId, ym) => `${profId}|${ym}`;
 const ordenarNome = (a, b) => a.nome.localeCompare(b.nome, 'pt-BR');
 const NOME_MODALIDADE = { integral: 'Integral', transporte: 'Apenas Transporte' };
 const NOME_CATEGORIA = { fixo: 'Fixo', cobertura: 'Cobertura/Standby' };
-const NOME_TURNO = { diurno: 'Diurno', noturno: 'Noturno', '24h': '24 horas' };
-const CLASSE_TURNO = { diurno: 'diurno', noturno: 'noturno', '24h': 't24' };
-const SIGLA_TURNO = { diurno: 'D', noturno: 'N', '24h': '24' };
+// Trocas de plantão às 07h e às 19h (veja js/calc.js)
+const NOME_TURNO = {
+  diurno: 'Diurno (07h–19h)', noturno: 'Noturno (19h–07h)',
+  '24h': '24h (07h–07h)', '24h19': '24h (19h–19h)',
+};
+const CURTO_TURNO = { diurno: 'Diurno', noturno: 'Noturno', '24h': '24h · 07h', '24h19': '24h · 19h' };
+const CLASSE_TURNO = { diurno: 'diurno', noturno: 'noturno', '24h': 't24', '24h19': 't24' };
 
 function dadosNovos(cfg = {}) {
   return {
@@ -572,7 +576,7 @@ function itemPlantao(p) {
       <div class="data-bloco"><strong>${p.data.slice(8)}</strong><span>${diaSemana(p.data)}</span></div>
       <div class="item-info">
         <strong>${esc(pr?.nome || 'Profissional removido')}</strong>
-        <span>${chip(NOME_TURNO[p.turno], CLASSE_TURNO[p.turno])} ${p.tipo === 'fixo'
+        <span>${chip(CURTO_TURNO[p.turno], CLASSE_TURNO[p.turno])} ${p.tipo === 'fixo'
           ? chip(`${NOME_MODALIDADE[p.modalidade]} · ${fmtBRL(valor)}`)
           : chip('Cobertura', 'neutro')} ${pago ? chip('Pago', 'ok') : ''}</span>
         ${p.obs ? `<span class="dica">${esc(p.obs)}</span>` : ''}
@@ -611,7 +615,11 @@ function formPlantao(plantao) {
         ? `<div class="campo"><span class="rotulo">Datas <small>(toque em um ou mais dias)</small></span><div id="cal" class="cal"></div></div>`
         : `<label>Data <input type="date" name="data" required value="${p0.data}"></label>`}
       <fieldset class="segmentado turnos"><legend>Turno</legend>
-        ${radio('turno', 'diurno', '☀ Diurno <small>12h</small>', p0.turno)}${radio('turno', 'noturno', '☾ Noturno <small>12h</small>', p0.turno)}${radio('turno', '24h', '◷ 24 horas <small>= 2 plantões</small>', p0.turno)}</fieldset>
+        ${radio('turno', 'diurno', `☀ Diurno <small>${HORARIO_TURNO.diurno} · 12h</small>`, p0.turno)}
+        ${radio('turno', 'noturno', `☾ Noturno <small>${HORARIO_TURNO.noturno} · 12h</small>`, p0.turno)}
+        ${radio('turno', '24h', `◷ 24h início 07h <small>${HORARIO_TURNO['24h']} do dia seguinte</small>`, p0.turno)}
+        ${radio('turno', '24h19', `◷ 24h início 19h <small>${HORARIO_TURNO['24h19']} do dia seguinte</small>`, p0.turno)}
+        <p class="dica turno-nota">Trocas às 07h e 19h. O plantão conta no mês da data em que começa.</p></fieldset>
       <fieldset class="segmentado" id="grp-tipo"><legend>Tipo de plantão</legend>
         ${radio('tipo', 'fixo', 'Fixo (escala)', tipo0)}${radio('tipo', 'cobertura', 'Cobertura', tipo0)}</fieldset>
       <fieldset class="segmentado" id="grp-mod"><legend>Modalidade aplicada</legend>
@@ -637,10 +645,8 @@ function formPlantao(plantao) {
       const cal = el.querySelector('#cal');
       if (!cal) return;
       const profId = f.profissionalId.value;
-      const doProf = new Map();
-      D.plantoes.filter((p) => p.profissionalId === profId && mesDe(p.data) === calMes).forEach((p) => {
-        doProf.set(p.data, [...(doProf.get(p.data) || []), SIGLA_TURNO[p.turno]]);
-      });
+      // Períodos já ocupados (inclui o dia seguinte de um 24h iniciado às 19h)
+      const ocupado = new Set(D.plantoes.filter((p) => p.profissionalId === profId).flatMap(periodosOcupados));
       const primeiro = parseISO(`${calMes}-01`).getDay();
       const n = diasDoMes(calMes);
       const hoje = hojeISO();
@@ -652,12 +658,12 @@ function formPlantao(plantao) {
       for (let i = 0; i < primeiro; i++) html += '<span></span>';
       for (let d = 1; d <= n; d++) {
         const iso = `${calMes}-${String(d).padStart(2, '0')}`;
-        const marcas = (doProf.get(iso) || []).join('·');
+        const marcas = ['D', 'N'].filter((x) => ocupado.has(`${iso}|${x}`)).join('·');
         const cls = [selecionadas.has(iso) && 'sel', iso === hoje && 'hoje', marcas && 'tem'].filter(Boolean).join(' ');
         html += `<button type="button" class="cal-dia ${cls}" data-dia="${iso}" aria-pressed="${selecionadas.has(iso)}">
           ${d}${marcas ? `<small>${marcas}</small>` : ''}</button>`;
       }
-      html += `</div><p class="dica">${selecionadas.size} dia(s) selecionado(s). Marcas indicam plantões já registrados (D = diurno, N = noturno, 24 = 24 horas).</p>`;
+      html += `</div><p class="dica">${selecionadas.size} dia(s) selecionado(s). Marcas indicam períodos já ocupados por este profissional: D = dia (07h–19h), N = noite (19h–07h).</p>`;
       cal.innerHTML = html;
     }
 
@@ -676,7 +682,7 @@ function formPlantao(plantao) {
       el.querySelector('#dica-plantao').innerHTML = tipo === 'fixo'
         ? (() => {
           const vu = valorUnitario(valorRadio('modalidade'), D.config.valores);
-          return valorRadio('turno') === '24h'
+          return pesoTurno(valorRadio('turno')) === 2
             ? `Conta como <strong>2 plantões</strong> para a regra do ${LIMIAR_ELEGIBILIDADE}º plantão. Valor: <strong>${fmtBRL(vu * 2)}</strong> (2 × ${fmtBRL(vu)}).`
             : `Conta para a regra do ${LIMIAR_ELEGIBILIDADE}º plantão. Valor: <strong>${fmtBRL(vu)}</strong> por plantão.`;
         })()
@@ -708,10 +714,10 @@ function formPlantao(plantao) {
       if (!datas.length || !datas[0]) return toast('Selecione ao menos uma data.', 'erro');
       if (!turno) return toast('Escolha o turno.', 'erro');
 
-      const duplicado = (data) => D.plantoes.some((p) => p.id !== plantao?.id && p.profissionalId === profissionalId && p.data === data && turnosConflitam(p.turno, turno));
+      const duplicado = (data) => D.plantoes.some((p) => p.id !== plantao?.id && p.profissionalId === profissionalId && plantoesConflitam(p, { data, turno }));
       const ignoradas = datas.filter(duplicado);
       const validas = datas.filter((d) => !duplicado(d));
-      if (!validas.length) return toast('Já existe plantão nesse dia que conflita com este turno (o de 24h ocupa o dia inteiro).', 'erro');
+      if (!validas.length) return toast('Este horário se sobrepõe a um plantão já registrado para este profissional.', 'erro');
 
       const vu = tipo === 'fixo' ? valorUnitario(modalidade, D.config.valores) : 0;
       if (novo) {
@@ -729,7 +735,7 @@ function formPlantao(plantao) {
       fechar();
       render();
       toast(novo ? `${validas.length} plantão(ões) registrado(s).` : 'Plantão atualizado.');
-      if (ignoradas.length) toast(`${ignoradas.length} data(s) ignorada(s): já havia plantão conflitante no dia.`, 'alerta');
+      if (ignoradas.length) toast(`${ignoradas.length} data(s) ignorada(s): se sobrepunham a plantões já registrados.`, 'alerta');
       if (pagos.length) toast('Atenção: o mês já tinha repasse registrado como pago. Confira o extrato.', 'alerta');
     });
   });
@@ -741,10 +747,12 @@ function formImportacao() {
       <p>Use um arquivo <strong>CSV</strong> (no Excel/Google Planilhas: “Salvar como → CSV”) com as colunas:</p>
       <pre class="exemplo">Data;Turno;Profissional;Tipo
 01/09/2026;24h;Maria Souza;Fixo
+02/09/2026;24h 19h;João Lima;
 03/09/2026;Diurno;Maria Souza;Fixo
 05/09/2026;Noturno;Maria Souza;
 08/09/2026;Diurno;João Lima;Cobertura</pre>
-      <p class="dica">Profissional deve ser o nome completo, igual ao cadastro. A coluna Tipo é opcional.</p>
+      <p class="dica">Profissional deve ser o nome completo, igual ao cadastro. Turno: <code>Diurno</code>, <code>Noturno</code>,
+      <code>24h</code> (início 07h) ou <code>24h 19h</code> (início 19h). A coluna Tipo é opcional.</p>
       <label>Arquivo <input type="file" id="imp-arq" accept=".csv,.txt,text/csv"></label>
       <label>…ou cole o conteúdo aqui <textarea id="imp-txt" rows="5"></textarea></label>
       <button type="button" class="btn sec" id="imp-analisar">Analisar</button>
@@ -758,18 +766,16 @@ function formImportacao() {
     el.querySelector('#imp-analisar').onclick = () => {
       const res = interpretarImportacao(parseCSV(el.querySelector('#imp-txt').value), D.profissionais);
       for (const r of res) {
-        if (!r.erros.length && D.plantoes.some((p) => p.profissionalId === r.profissional.id && p.data === r.data && turnosConflitam(p.turno, r.turno))) {
-          r.erros.push('já registrado');
+        if (!r.erros.length && D.plantoes.some((p) => p.profissionalId === r.profissional.id && plantoesConflitam(p, r))) {
+          r.erros.push('já registrado ou sobreposto a outro plantão');
         }
       }
       // duplicados dentro do próprio arquivo
-      const vistos = new Map(); // prof|data -> turnos já vistos
+      const aceitos = [];
       for (const r of res) {
         if (r.erros.length) continue;
-        const k = `${r.profissional.id}|${r.data}`;
-        const turnos = vistos.get(k) || [];
-        if (turnos.some((t) => turnosConflitam(t, r.turno))) r.erros.push('repetido/conflitante no arquivo');
-        else vistos.set(k, [...turnos, r.turno]);
+        if (aceitos.some((a) => a.profissional.id === r.profissional.id && plantoesConflitam(a, r))) r.erros.push('repetido/sobreposto no arquivo');
+        else aceitos.push(r);
       }
       validos = res.filter((r) => !r.erros.length);
       const erros = res.filter((r) => r.erros.length);

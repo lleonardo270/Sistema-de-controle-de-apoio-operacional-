@@ -103,15 +103,39 @@ export function quintoDiaUtil(ymReferencia) {
 }
 
 // ---------- Motor de cálculo ----------
-export const TURNOS = ['diurno', 'noturno', '24h'];
-const ORDEM_TURNO = { diurno: 0, '24h': 1, noturno: 2 };
+// Trocas de plantão às 07h e às 19h.
+//   diurno : 07h–19h da data
+//   noturno: 19h da data – 07h do dia seguinte
+//   24h    : 07h da data – 07h do dia seguinte (dia + noite da data)
+//   24h19  : 19h da data – 19h do dia seguinte (noite da data + dia seguinte)
+// O plantão pertence ao mês da data em que COMEÇA.
+export const TURNOS = ['diurno', 'noturno', '24h', '24h19'];
+export const HORARIO_TURNO = { diurno: '07h–19h', noturno: '19h–07h', '24h': '07h–07h', '24h19': '19h–19h' };
+const ORDEM_TURNO = { diurno: 0, '24h': 0, noturno: 1, '24h19': 1 };
 
 /** Quantos plantões de 12h o turno representa (24h = 2). */
-export const pesoTurno = (turno) => (turno === '24h' ? 2 : 1);
+export const pesoTurno = (turno) => (turno === '24h' || turno === '24h19' ? 2 : 1);
 
-/** Turnos que não podem coexistir no mesmo dia para o mesmo profissional. */
-export function turnosConflitam(a, b) {
-  return a === b || a === '24h' || b === '24h';
+const diaSeguinte = (iso) => {
+  const d = parseISO(iso);
+  return toISO(new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1));
+};
+
+/** Períodos de 12h ocupados pelo plantão: 'AAAA-MM-DD|D' (07h–19h) ou '|N' (19h–07h). */
+export function periodosOcupados({ data, turno }) {
+  switch (turno) {
+    case 'diurno': return [`${data}|D`];
+    case 'noturno': return [`${data}|N`];
+    case '24h': return [`${data}|D`, `${data}|N`];
+    case '24h19': return [`${data}|N`, `${diaSeguinte(data)}|D`];
+    default: return [];
+  }
+}
+
+/** Dois plantões (do mesmo profissional) se sobrepõem no tempo? */
+export function plantoesConflitam(a, b) {
+  const pa = periodosOcupados(a);
+  return periodosOcupados(b).some((x) => pa.includes(x));
 }
 
 export function compararPlantoes(a, b) {
@@ -278,7 +302,9 @@ export function interpretarTurno(s) {
   const t = semAcento(s);
   if (['diurno', 'd', 'dia', 'diurna', 'manha'].includes(t)) return 'diurno';
   if (['noturno', 'n', 'noite', 'noturna'].includes(t)) return 'noturno';
-  if (['24h', '24', '24 h', '24 horas', '24hs', 'plantao 24h'].includes(t)) return '24h';
+  const c = t.replace(/[^a-z0-9]/g, '');
+  if (['24', '24h', '24hs', '24horas', '2407', '24h07', '24h07h', '24h7', '24h7h', '24hdia', '24hdiurno', 'plantao24h'].includes(c)) return '24h';
+  if (['2419', '24h19', '24h19h', '24hnoite', '24hnoturno', '24noite', '24horas19h', 'plantao24h19h'].includes(c)) return '24h19';
   return null;
 }
 
@@ -295,7 +321,7 @@ export function interpretarImportacao(linhas, profissionais) {
     const prof = profissionais.find((p) => semAcento(p.nome) === chave);
     const erros = [];
     if (!data) erros.push('data inválida');
-    if (!turno) erros.push('turno inválido (use Diurno, Noturno ou 24h)');
+    if (!turno) erros.push('turno inválido (use Diurno, Noturno, 24h ou 24h 19h)');
     if (!prof) erros.push(`profissional "${cProf || ''}" não encontrado`);
     let tipo = prof && prof.categoria === 'fixo' ? 'fixo' : 'cobertura';
     if (cTipo && semAcento(cTipo).startsWith('cob')) tipo = 'cobertura';

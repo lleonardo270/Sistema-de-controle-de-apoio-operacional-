@@ -8,7 +8,7 @@ apurar a **ajuda de custo voluntária e indenizatória** (alimentação e transp
 
 | Requisito | Onde está |
 |---|---|
-| RF01 – Cadastro de profissionais (nome completo, chave Pix, COREN opcional, categoria Fixo ou Cobertura/Standby, modalidade Integral ou Apenas Transporte com aceite prévio) | aba **Profissionais** |
+| RF01 – Cadastro de profissionais (nome completo, CPF validado, chave Pix, COREN opcional, categoria Fixo ou Cobertura/Standby, modalidade Integral ou Apenas Transporte com aceite prévio) | aba **Profissionais** |
 | RF02 – Registro manual de plantões (diurno 07h–19h, noturno 19h–07h, ou 24h iniciando às 07h ou às 19h = 2 plantões de 12h), vários dias de uma vez pelo calendário, bloqueio de horários sobrepostos, seleção múltipla para apagar e importação de planilha CSV | aba **Plantões** |
 | RF03 – Cálculo automático: regra do 4º plantão fixo, retroativo do 1º ao 3º, R$ 30,00 ou R$ 10,00 por plantão; cobertura não conta | `js/calc.js` |
 | RF04 – Extrato mensal detalhado por profissional | aba **Extratos** |

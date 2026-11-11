@@ -1,5 +1,5 @@
 // Service worker: permite abrir o app sem internet (rede primeiro, cache como reserva).
-const CACHE = 'apoio-voluntario-v4';
+const CACHE = 'apoio-voluntario-v5';
 const ARQUIVOS = [
   './', 'index.html', 'css/style.css', 'js/app.js', 'js/calc.js', 'js/store.js', 'js/textos.js',
   'js/config.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png',

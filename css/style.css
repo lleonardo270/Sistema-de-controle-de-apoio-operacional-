@@ -312,7 +312,6 @@ select { min-height: 46px; }
 .seg span small { display: block; font-size: .72rem; font-weight: 500; color: var(--suave); }
 .seg input:checked + span small { color: var(--pri-esc); }
 .seg span { flex-direction: column; line-height: 1.2; }
-.cal-dia small { font-size: .58rem; letter-spacing: -.02em; }
 
 .barra-selecao {
   position: sticky; top: calc(env(safe-area-inset-top) + 58px); z-index: 5;
@@ -329,3 +328,27 @@ select { min-height: 46px; }
 }
 .item.marcado .caixa { background: var(--erro); border-color: var(--erro); }
 @media (min-width: 640px) { .barra-selecao > span { flex: 1 1 auto; } }
+
+/* ---------- Calendário com a escala de todos ---------- */
+.cal { padding: 8px; }
+.cal-grade { gap: 3px; }
+.cal-dia { aspect-ratio: auto; min-height: 58px; justify-content: flex-start; gap: 2px; padding: 3px 2px; }
+.cal-num { font-size: .9rem; line-height: 1.1; }
+.faixa {
+  display: block; width: 100%; height: 15px; border-radius: 4px; background: var(--c); color: #fff;
+  font-size: .62rem; font-weight: 800; line-height: 15px; letter-spacing: -.02em; text-align: center;
+  overflow: hidden; white-space: nowrap; opacity: .55;
+}
+.faixa.atual { opacity: 1; box-shadow: inset 0 0 0 1.5px rgba(0,0,0,.25); }
+.faixa.vazia { background: transparent; border: 1px dashed #cdd8d5; opacity: 1; }
+.cal-dia.sel .faixa.vazia { border-color: rgba(255,255,255,.6); }
+.cal-dia.sel .faixa { box-shadow: 0 0 0 1px #fff; }
+.cal-legenda { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 10px; font-size: .8rem; color: var(--suave); }
+.leg { display: inline-flex; align-items: center; gap: 5px; }
+.leg i {
+  font-style: normal; background: var(--c); color: #fff; border-radius: 4px; padding: 1px 4px;
+  font-size: .62rem; font-weight: 800; opacity: .55;
+}
+.leg.atual { color: var(--texto); font-weight: 700; }
+.leg.atual i { opacity: 1; }
+.cal-detalhe { margin: 8px 0 0; padding: 8px 10px; background: #fff; border: 1px solid var(--borda); border-radius: 8px; font-size: .85rem; }

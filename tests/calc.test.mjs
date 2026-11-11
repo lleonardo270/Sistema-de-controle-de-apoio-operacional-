@@ -89,3 +89,35 @@ test('importação de CSV', () => {
   assert.ok(r[3].erros.length);
   assert.equal(interpretarData('2026-9-3'), '2026-09-03');
 });
+
+test('turno de 24h vale por dois plantões de 12h', () => {
+  // 1 de 24h + 2 de 12h = 4 equivalentes → elegível
+  const ps = [pl('a', '2026-09-01', '24h'), pl('a', '2026-09-03'), pl('a', '2026-09-05', 'noturno')];
+  const e = calcularExtrato(fixo, ps, '2026-09');
+  assert.equal(e.plantoesFixos, 4);
+  assert.equal(e.elegivel, true);
+  assert.equal(e.total, 120);
+  assert.deepEqual(e.linhas.map((l) => l.status), ['Validado (1º e 2º)', 'Validado (3º)', 'Validado (4º)*']);
+  assert.equal(e.linhas[0].subtotal, 60);
+  assert.equal(e.valorRetroativo, 90);
+});
+
+test('24h pode ser o plantão que ativa a regra', () => {
+  const ps = [pl('a', '2026-09-01'), pl('a', '2026-09-02'), pl('a', '2026-09-03', '24h')];
+  const e = calcularExtrato(fixo, ps, '2026-09');
+  assert.equal(e.linhas[2].status, 'Validado (3º e 4º)*');
+  assert.equal(e.linhas[2].ativou, true);
+  assert.equal(e.total, 120);
+  assert.equal(e.valorRetroativo, 60);
+});
+
+test('24h sozinho não atinge o limiar; transporte 24h = R$ 20', () => {
+  const e = calcularExtrato(fixo, [pl('a', '2026-09-01', '24h')], '2026-09');
+  assert.equal(e.elegivel, false);
+  assert.equal(e.faltam, 2);
+  assert.equal(e.valorPotencial, 60);
+  const t = ['01', '03'].map((d) => pl('a', `2026-09-${d}`, '24h', 'fixo', 'transporte'));
+  const e2 = calcularExtrato(fixo, t, '2026-09');
+  assert.equal(e2.total, 40);
+  assert.equal(e2.refeicoesNoLocal, 4);
+});

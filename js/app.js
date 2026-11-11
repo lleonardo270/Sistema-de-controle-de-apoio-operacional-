@@ -1,7 +1,7 @@
 import {
   MESES, VALORES_PADRAO, LIMIAR_ELEGIBILIDADE, fmtBRL, valorUnitario, hojeISO, fmtData, diaSemana,
   mesDe, somarMeses, mesAnterior, nomeMes, diasDoMes, parseISO, toISO, quintoDiaUtil, calcularExtrato,
-  compararPlantoes, round2, semAcento, parseCSV, interpretarImportacao,
+  compararPlantoes, round2, semAcento, pesoTurno, turnosConflitam, parseCSV, interpretarImportacao,
 } from './calc.js';
 import * as store from './store.js';
 import {
@@ -14,7 +14,7 @@ import { CONFIG_PADRAO } from './config.js';
 // Estado
 // ======================================================================
 let D = null; // dados descriptografados
-const ui = { mes: mesDe(hojeISO()), filtroProf: '', extratoProf: null };
+const ui = { mes: mesDe(hojeISO()), filtroProf: '', extratoProf: null, selecao: null };
 const $app = document.getElementById('app');
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -24,7 +24,9 @@ const chaveRepasse = (profId, ym) => `${profId}|${ym}`;
 const ordenarNome = (a, b) => a.nome.localeCompare(b.nome, 'pt-BR');
 const NOME_MODALIDADE = { integral: 'Integral', transporte: 'Apenas Transporte' };
 const NOME_CATEGORIA = { fixo: 'Fixo', cobertura: 'Cobertura/Standby' };
-const NOME_TURNO = { diurno: 'Diurno', noturno: 'Noturno' };
+const NOME_TURNO = { diurno: 'Diurno', noturno: 'Noturno', '24h': '24 horas' };
+const CLASSE_TURNO = { diurno: 'diurno', noturno: 'noturno', '24h': 't24' };
+const SIGLA_TURNO = { diurno: 'D', noturno: 'N', '24h': '24' };
 
 function dadosNovos(cfg = {}) {
   return {
@@ -320,6 +322,7 @@ function render() {
 
 window.addEventListener('hashchange', () => {
   if (rotaAtual() !== 'extratos') ui.extratoProf = null;
+  ui.selecao = null;
   render();
   window.scrollTo(0, 0);
 });
@@ -333,6 +336,7 @@ const ACOES = {
   },
   mes(el) {
     ui.mes = somarMeses(ui.mes, Number(el.dataset.delta));
+    ui.selecao = null;
     render();
   },
   'novo-plantao'() { formPlantao(); },
@@ -346,6 +350,35 @@ const ACOES = {
     toast('Plantão excluído.');
   },
   importar() { formImportacao(); },
+  'selecionar'() { ui.selecao = new Set(); render(); },
+  'cancelar-selecao'() { ui.selecao = null; render(); },
+  'sel-plantao'(el) {
+    if (!ui.selecao) return;
+    const id = el.dataset.id;
+    ui.selecao.has(id) ? ui.selecao.delete(id) : ui.selecao.add(id);
+    render();
+  },
+  'sel-todos'() {
+    const ids = plantoesListados().map((p) => p.id);
+    const todos = ids.every((id) => ui.selecao.has(id));
+    ui.selecao = todos ? new Set() : new Set(ids);
+    render();
+  },
+  'apagar-selecionados'() {
+    const ids = ui.selecao ? [...ui.selecao] : [];
+    if (!ids.length) return toast('Nenhum plantão selecionado.', 'alerta');
+    const alvo = D.plantoes.filter((p) => ui.selecao.has(p.id));
+    const emPagos = alvo.filter((p) => D.repasses[chaveRepasse(p.profissionalId, mesDe(p.data))]).length;
+    const msg = `Apagar ${alvo.length} plantão(ões) selecionado(s)?`
+      + (emPagos ? `\n\nAtenção: ${emPagos} pertence(m) a mês já marcado como pago.` : '')
+      + '\n\nEsta ação não pode ser desfeita.';
+    if (!confirm(msg)) return;
+    D.plantoes = D.plantoes.filter((p) => !ui.selecao.has(p.id));
+    ui.selecao = null;
+    persistir();
+    render();
+    toast(`${alvo.length} plantão(ões) apagado(s).`);
+  },
   'novo-prof'() {
     if (rotaAtual() !== 'profissionais') location.hash = '#/profissionais';
     formProfissional();
@@ -385,7 +418,7 @@ const ACOES = {
     persistir();
     render();
   },
-  'filtro-prof'(el) { ui.filtroProf = el.value; render(); },
+  'filtro-prof'(el) { ui.filtroProf = el.value; ui.selecao = null; render(); },
   'exportar'() { exportarBackup(); },
   'editar-texto'(el) { formTexto(el.dataset.chave); },
   'ver-termo-familia'() { modal('Termo de Ciência Inicial', `<div class="termo-box">${termoFamilia(D.config)}</div>
@@ -399,7 +432,7 @@ document.addEventListener('click', (e) => {
 document.addEventListener('change', (e) => {
   const el = e.target.closest('[data-act-change]');
   if (!el) return;
-  if (el.dataset.actChange === 'mes-input' && el.value) { ui.mes = el.value; render(); }
+  if (el.dataset.actChange === 'mes-input' && el.value) { ui.mes = el.value; ui.selecao = null; render(); }
   if (el.dataset.actChange === 'filtro-prof') ACOES['filtro-prof'](el);
   if (el.dataset.actChange === 'importar-backup') importarBackup(el);
 });
@@ -490,10 +523,17 @@ function progresso(e) {
 // ======================================================================
 // Página: Plantões
 // ======================================================================
-function pgPlantoes() {
-  const lista = D.plantoes
+function plantoesListados() {
+  return D.plantoes
     .filter((p) => mesDe(p.data) === ui.mes && (!ui.filtroProf || p.profissionalId === ui.filtroProf))
     .sort((a, b) => -compararPlantoes(a, b));
+}
+
+function pgPlantoes() {
+  const lista = plantoesListados();
+  if (ui.selecao) for (const id of [...ui.selecao]) if (!lista.some((p) => p.id === id)) ui.selecao.delete(id);
+  const sel = ui.selecao;
+  const todos = sel && lista.length && lista.every((p) => sel.has(p.id));
   const profs = [...D.profissionais].sort(ordenarNome);
   return `
     <h1>Registro de Plantões</h1>
@@ -504,11 +544,18 @@ function pgPlantoes() {
         ${profs.map((p) => opt(p.id, p.nome, ui.filtroProf)).join('')}
       </select>
     </div>
-    <div class="barra-acoes">
+    ${sel ? '' : `<div class="barra-acoes">
       <button type="button" class="btn" data-act="novo-plantao">+ Registrar</button>
       <button type="button" class="btn sec" data-act="importar">Importar planilha</button>
-    </div>
-    ${lista.length ? `<ul class="lista cartao">${lista.map(itemPlantao).join('')}</ul>`
+      ${lista.length ? '<button type="button" class="btn sec" data-act="selecionar">Selecionar para apagar</button>' : ''}
+    </div>`}
+    ${sel ? `<div class="barra-selecao">
+      <span><strong>${sel.size}</strong> selecionado(s)</span>
+      <button type="button" class="btn sec pequeno" data-act="sel-todos">${todos ? 'Limpar' : 'Selecionar todos'}</button>
+      <button type="button" class="btn sec pequeno" data-act="cancelar-selecao">Cancelar</button>
+      <button type="button" class="btn perigo pequeno" data-act="apagar-selecionados" ${sel.size ? '' : 'disabled'}>Apagar${sel.size ? ` (${sel.size})` : ''}</button>
+    </div>` : ''}
+    ${lista.length ? `<ul class="lista cartao ${sel ? 'modo-selecao' : ''}">${lista.map(itemPlantao).join('')}</ul>`
       : `<div class="vazio pequeno"><p>Nenhum plantão registrado em ${nomeMes(ui.mes)}.</p></div>`}
     <p class="dica centro">${lista.length} plantão(ões) listados. Registro manual para apuração do apoio voluntário.</p>`;
 }
@@ -516,20 +563,24 @@ function pgPlantoes() {
 function itemPlantao(p) {
   const pr = prof(p.profissionalId);
   const pago = D.repasses[chaveRepasse(p.profissionalId, mesDe(p.data))];
+  const sel = ui.selecao;
+  const marcado = sel?.has(p.id);
+  const valor = round2((p.valorUnitario || 0) * pesoTurno(p.turno));
   return `
-    <li class="item">
+    <li class="item ${sel ? 'clicavel' : ''} ${marcado ? 'marcado' : ''}" ${sel ? `data-act="sel-plantao" data-id="${p.id}" role="checkbox" aria-checked="${!!marcado}"` : ''}>
+      ${sel ? `<span class="caixa" aria-hidden="true">${marcado ? '✓' : ''}</span>` : ''}
       <div class="data-bloco"><strong>${p.data.slice(8)}</strong><span>${diaSemana(p.data)}</span></div>
       <div class="item-info">
         <strong>${esc(pr?.nome || 'Profissional removido')}</strong>
-        <span>${chip(NOME_TURNO[p.turno], p.turno)} ${p.tipo === 'fixo'
-          ? chip(`${NOME_MODALIDADE[p.modalidade]} · ${fmtBRL(p.valorUnitario)}`)
+        <span>${chip(NOME_TURNO[p.turno], CLASSE_TURNO[p.turno])} ${p.tipo === 'fixo'
+          ? chip(`${NOME_MODALIDADE[p.modalidade]} · ${fmtBRL(valor)}`)
           : chip('Cobertura', 'neutro')} ${pago ? chip('Pago', 'ok') : ''}</span>
         ${p.obs ? `<span class="dica">${esc(p.obs)}</span>` : ''}
       </div>
-      <div class="item-acoes">
+      ${sel ? '' : `<div class="item-acoes">
         <button type="button" class="btn-icone" data-act="editar-plantao" data-id="${p.id}" aria-label="Editar">✎</button>
         <button type="button" class="btn-icone" data-act="excluir-plantao" data-id="${p.id}" aria-label="Excluir">🗑</button>
-      </div>
+      </div>`}
     </li>`;
 }
 
@@ -559,8 +610,8 @@ function formPlantao(plantao) {
       ${novo
         ? `<div class="campo"><span class="rotulo">Datas <small>(toque em um ou mais dias)</small></span><div id="cal" class="cal"></div></div>`
         : `<label>Data <input type="date" name="data" required value="${p0.data}"></label>`}
-      <fieldset class="segmentado"><legend>Turno (12h)</legend>
-        ${radio('turno', 'diurno', '☀ Diurno', p0.turno)}${radio('turno', 'noturno', '☾ Noturno', p0.turno)}</fieldset>
+      <fieldset class="segmentado turnos"><legend>Turno</legend>
+        ${radio('turno', 'diurno', '☀ Diurno <small>12h</small>', p0.turno)}${radio('turno', 'noturno', '☾ Noturno <small>12h</small>', p0.turno)}${radio('turno', '24h', '◷ 24 horas <small>= 2 plantões</small>', p0.turno)}</fieldset>
       <fieldset class="segmentado" id="grp-tipo"><legend>Tipo de plantão</legend>
         ${radio('tipo', 'fixo', 'Fixo (escala)', tipo0)}${radio('tipo', 'cobertura', 'Cobertura', tipo0)}</fieldset>
       <fieldset class="segmentado" id="grp-mod"><legend>Modalidade aplicada</legend>
@@ -588,7 +639,7 @@ function formPlantao(plantao) {
       const profId = f.profissionalId.value;
       const doProf = new Map();
       D.plantoes.filter((p) => p.profissionalId === profId && mesDe(p.data) === calMes).forEach((p) => {
-        doProf.set(p.data, (doProf.get(p.data) || '') + (p.turno === 'diurno' ? 'D' : 'N'));
+        doProf.set(p.data, [...(doProf.get(p.data) || []), SIGLA_TURNO[p.turno]]);
       });
       const primeiro = parseISO(`${calMes}-01`).getDay();
       const n = diasDoMes(calMes);
@@ -601,12 +652,12 @@ function formPlantao(plantao) {
       for (let i = 0; i < primeiro; i++) html += '<span></span>';
       for (let d = 1; d <= n; d++) {
         const iso = `${calMes}-${String(d).padStart(2, '0')}`;
-        const marcas = doProf.get(iso) || '';
+        const marcas = (doProf.get(iso) || []).join('·');
         const cls = [selecionadas.has(iso) && 'sel', iso === hoje && 'hoje', marcas && 'tem'].filter(Boolean).join(' ');
         html += `<button type="button" class="cal-dia ${cls}" data-dia="${iso}" aria-pressed="${selecionadas.has(iso)}">
           ${d}${marcas ? `<small>${marcas}</small>` : ''}</button>`;
       }
-      html += `</div><p class="dica">${selecionadas.size} dia(s) selecionado(s). Letras indicam plantões já registrados (D = diurno, N = noturno).</p>`;
+      html += `</div><p class="dica">${selecionadas.size} dia(s) selecionado(s). Marcas indicam plantões já registrados (D = diurno, N = noturno, 24 = 24 horas).</p>`;
       cal.innerHTML = html;
     }
 
@@ -623,7 +674,12 @@ function formPlantao(plantao) {
       const tipo = valorRadio('tipo');
       el.querySelector('#grp-mod').hidden = tipo !== 'fixo';
       el.querySelector('#dica-plantao').innerHTML = tipo === 'fixo'
-        ? `Conta para a regra do ${LIMIAR_ELEGIBILIDADE}º plantão. Valor: <strong>${fmtBRL(valorUnitario(valorRadio('modalidade'), D.config.valores))}</strong> por plantão.`
+        ? (() => {
+          const vu = valorUnitario(valorRadio('modalidade'), D.config.valores);
+          return valorRadio('turno') === '24h'
+            ? `Conta como <strong>2 plantões</strong> para a regra do ${LIMIAR_ELEGIBILIDADE}º plantão. Valor: <strong>${fmtBRL(vu * 2)}</strong> (2 × ${fmtBRL(vu)}).`
+            : `Conta para a regra do ${LIMIAR_ELEGIBILIDADE}º plantão. Valor: <strong>${fmtBRL(vu)}</strong> por plantão.`;
+        })()
         : 'Cobertura: não entra na contagem e não gera repasse em dinheiro (alimentação fornecida no local).';
       renderCal();
     }
@@ -652,10 +708,10 @@ function formPlantao(plantao) {
       if (!datas.length || !datas[0]) return toast('Selecione ao menos uma data.', 'erro');
       if (!turno) return toast('Escolha o turno.', 'erro');
 
-      const duplicado = (data) => D.plantoes.some((p) => p.id !== plantao?.id && p.profissionalId === profissionalId && p.data === data && p.turno === turno);
+      const duplicado = (data) => D.plantoes.some((p) => p.id !== plantao?.id && p.profissionalId === profissionalId && p.data === data && turnosConflitam(p.turno, turno));
       const ignoradas = datas.filter(duplicado);
       const validas = datas.filter((d) => !duplicado(d));
-      if (!validas.length) return toast('Já existe plantão registrado nesse dia e turno para este profissional.', 'erro');
+      if (!validas.length) return toast('Já existe plantão nesse dia que conflita com este turno (o de 24h ocupa o dia inteiro).', 'erro');
 
       const vu = tipo === 'fixo' ? valorUnitario(modalidade, D.config.valores) : 0;
       if (novo) {
@@ -673,7 +729,7 @@ function formPlantao(plantao) {
       fechar();
       render();
       toast(novo ? `${validas.length} plantão(ões) registrado(s).` : 'Plantão atualizado.');
-      if (ignoradas.length) toast(`${ignoradas.length} data(s) ignorada(s): já havia plantão no mesmo turno.`, 'alerta');
+      if (ignoradas.length) toast(`${ignoradas.length} data(s) ignorada(s): já havia plantão conflitante no dia.`, 'alerta');
       if (pagos.length) toast('Atenção: o mês já tinha repasse registrado como pago. Confira o extrato.', 'alerta');
     });
   });
@@ -684,6 +740,7 @@ function formImportacao() {
     <div class="form">
       <p>Use um arquivo <strong>CSV</strong> (no Excel/Google Planilhas: “Salvar como → CSV”) com as colunas:</p>
       <pre class="exemplo">Data;Turno;Profissional;Tipo
+01/09/2026;24h;Maria Souza;Fixo
 03/09/2026;Diurno;Maria Souza;Fixo
 05/09/2026;Noturno;Maria Souza;
 08/09/2026;Diurno;João Lima;Cobertura</pre>
@@ -701,17 +758,18 @@ function formImportacao() {
     el.querySelector('#imp-analisar').onclick = () => {
       const res = interpretarImportacao(parseCSV(el.querySelector('#imp-txt').value), D.profissionais);
       for (const r of res) {
-        if (!r.erros.length && D.plantoes.some((p) => p.profissionalId === r.profissional.id && p.data === r.data && p.turno === r.turno)) {
+        if (!r.erros.length && D.plantoes.some((p) => p.profissionalId === r.profissional.id && p.data === r.data && turnosConflitam(p.turno, r.turno))) {
           r.erros.push('já registrado');
         }
       }
       // duplicados dentro do próprio arquivo
-      const vistos = new Set();
+      const vistos = new Map(); // prof|data -> turnos já vistos
       for (const r of res) {
         if (r.erros.length) continue;
-        const k = `${r.profissional.id}|${r.data}|${r.turno}`;
-        if (vistos.has(k)) r.erros.push('repetido no arquivo');
-        vistos.add(k);
+        const k = `${r.profissional.id}|${r.data}`;
+        const turnos = vistos.get(k) || [];
+        if (turnos.some((t) => turnosConflitam(t, r.turno))) r.erros.push('repetido/conflitante no arquivo');
+        else vistos.set(k, [...turnos, r.turno]);
       }
       validos = res.filter((r) => !r.erros.length);
       const erros = res.filter((r) => r.erros.length);
@@ -915,7 +973,7 @@ function pgExtratoDetalhe() {
           <li class="item ${l.ativou ? 'destaque' : ''}">
             <div class="data-bloco"><strong>${l.plantao.data.slice(8)}</strong><span>${diaSemana(l.plantao.data)}</span></div>
             <div class="item-info"><strong>${esc(l.status)}</strong>
-              <span class="dica">${NOME_TURNO[l.plantao.turno]}${l.plantao.tipo === 'fixo' ? ` · ${NOME_MODALIDADE[l.plantao.modalidade]} · unit. ${fmtBRL(l.valorUnitario)}` : ''}${l.retroativo ? ' · retroativo' : ''}${l.refeicaoNoLocal ? ' · refeição no local' : ''}</span>
+              <span class="dica">${NOME_TURNO[l.plantao.turno]}${l.plantao.tipo === 'fixo' ? ` · ${NOME_MODALIDADE[l.plantao.modalidade]} · unit. ${fmtBRL(l.valorUnitario)}${l.peso > 1 ? ` × ${l.peso}` : ''}` : ''}${l.retroativo ? ' · retroativo' : ''}${l.refeicaoNoLocal ? ' · refeição no local' : ''}</span>
               ${l.ativou ? '<span class="dica">*Ativou a regra de elegibilidade e o retroativo</span>' : ''}</div>
             <div class="item-dir"><strong>${fmtBRL(l.subtotal)}</strong></div>
           </li>`).join('')}
@@ -1247,7 +1305,7 @@ function docExtrato(ext, anexo = false) {
       <tbody>${ext.linhas.map((l) => `
         <tr><td>${fmtData(l.plantao.data)}</td><td>${NOME_TURNO[l.plantao.turno]}</td>
         <td>${esc(l.status)}${l.plantao.tipo === 'fixo' && l.plantao.modalidade === 'transporte' ? ' · Transporte' : ''}</td>
-        <td>${fmtBRL(l.valorUnitario)}</td><td>${fmtBRL(l.subtotal)}</td></tr>`).join('')
+        <td>${fmtBRL(l.valorUnitario)}${l.peso > 1 ? ` × ${l.peso}` : ''}</td><td>${fmtBRL(l.subtotal)}</td></tr>`).join('')
         || '<tr><td colspan="5">Nenhum plantão registrado.</td></tr>'}</tbody>
     </table>
     ${ext.elegivel ? '<p class="doc-nota">*Ativou a regra de elegibilidade e o retroativo.</p>' : ''}

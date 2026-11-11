@@ -103,15 +103,28 @@ export function quintoDiaUtil(ymReferencia) {
 }
 
 // ---------- Motor de cálculo ----------
-const ORDEM_TURNO = { diurno: 0, noturno: 1 };
+export const TURNOS = ['diurno', 'noturno', '24h'];
+const ORDEM_TURNO = { diurno: 0, '24h': 1, noturno: 2 };
+
+/** Quantos plantões de 12h o turno representa (24h = 2). */
+export const pesoTurno = (turno) => (turno === '24h' ? 2 : 1);
+
+/** Turnos que não podem coexistir no mesmo dia para o mesmo profissional. */
+export function turnosConflitam(a, b) {
+  return a === b || a === '24h' || b === '24h';
+}
+
 export function compararPlantoes(a, b) {
   if (a.data !== b.data) return a.data < b.data ? -1 : 1;
   return (ORDEM_TURNO[a.turno] ?? 9) - (ORDEM_TURNO[b.turno] ?? 9);
 }
 
+const ordinal = (ini, fim) => (ini === fim ? `${ini}º` : `${ini}º e ${fim}º`);
+
 /**
  * Calcula o extrato de um profissional em um mês.
  * - Só plantões do tipo "fixo" contam (cobertura nunca gera repasse).
+ * - Contagem e valores em plantões de 12h: um turno de 24h vale por dois.
  * - Abaixo de 4 plantões fixos: nada a repassar (aguardando elegibilidade).
  * - Ao atingir o 4º: todos os plantões do mês são validados, inclusive o
  *   retroativo do 1º ao 3º.
@@ -125,34 +138,38 @@ export function calcularExtrato(prof, plantoes, ym) {
   // mudanças posteriores de categoria não alterem meses já apurados.
   const contaParaRepasse = (p) => p.tipo === 'fixo';
   const fixos = doMes.filter(contaParaRepasse);
-  const elegivel = fixos.length >= LIMIAR_ELEGIBILIDADE;
+  const soma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
+  const equivalentes = soma(fixos, (p) => pesoTurno(p.turno));
+  const elegivel = equivalentes >= LIMIAR_ELEGIBILIDADE;
 
-  let ordem = 0;
+  let acumulado = 0;
   const linhas = doMes.map((p) => {
+    const peso = pesoTurno(p.turno);
     const refeicaoNoLocal = p.tipo !== 'fixo' || p.modalidade === 'transporte';
     if (!contaParaRepasse(p)) {
       return {
-        plantao: p, ordem: null, status: 'Cobertura (sem repasse)', valorUnitario: 0,
+        plantao: p, ordem: null, peso, status: 'Cobertura (sem repasse)', valorUnitario: 0,
         subtotal: 0, retroativo: false, ativou: false, refeicaoNoLocal,
       };
     }
-    ordem++;
+    const ini = acumulado + 1;
+    const fim = acumulado + peso;
+    acumulado = fim;
     const vu = Number(p.valorUnitario) || 0;
+    const ativou = elegivel && ini <= LIMIAR_ELEGIBILIDADE && fim >= LIMIAR_ELEGIBILIDADE;
     let status;
-    if (!elegivel) status = `Registrado (${ordem}º) – aguardando 4º`;
-    else if (ordem === LIMIAR_ELEGIBILIDADE) status = `Validado (${ordem}º)*`;
-    else status = `Validado (${ordem}º)`;
+    if (!elegivel) status = `Registrado (${ordinal(ini, fim)}) – aguardando 4º`;
+    else status = `Validado (${ordinal(ini, fim)})${ativou ? '*' : ''}`;
     return {
-      plantao: p, ordem, status, valorUnitario: vu,
-      subtotal: elegivel ? vu : 0,
-      retroativo: elegivel && ordem < LIMIAR_ELEGIBILIDADE,
-      ativou: elegivel && ordem === LIMIAR_ELEGIBILIDADE,
+      plantao: p, ordem: ini, ordemFim: fim, peso, status, valorUnitario: vu,
+      subtotal: elegivel ? round2(vu * peso) : 0,
+      retroativo: elegivel && fim < LIMIAR_ELEGIBILIDADE,
+      ativou,
       refeicaoNoLocal,
     };
   });
 
-  const soma = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
-  const potencial = soma(linhas.filter((l) => l.ordem), (l) => l.valorUnitario);
+  const potencial = soma(linhas.filter((l) => l.ordem), (l) => l.valorUnitario * l.peso);
   const modalidades = [...new Set(fixos.map((p) => p.modalidade))];
 
   return {
@@ -160,11 +177,13 @@ export function calcularExtrato(prof, plantoes, ym) {
     mes: ym,
     linhas,
     totalPlantoes: doMes.length,
-    plantoesFixos: fixos.length,
-    plantoesCobertura: doMes.length - fixos.length,
-    refeicoesNoLocal: linhas.filter((l) => l.refeicaoNoLocal).length,
+    // contagens em plantões de 12h (24h = 2)
+    plantoesFixos: equivalentes,
+    plantoesCobertura: soma(doMes.filter((p) => !contaParaRepasse(p)), (p) => pesoTurno(p.turno)),
+    turnos24h: doMes.filter((p) => p.turno === '24h').length,
+    refeicoesNoLocal: soma(linhas.filter((l) => l.refeicaoNoLocal), (l) => l.peso),
     elegivel,
-    faltam: Math.max(0, LIMIAR_ELEGIBILIDADE - fixos.length),
+    faltam: Math.max(0, LIMIAR_ELEGIBILIDADE - equivalentes),
     valorRetroativo: round2(soma(linhas.filter((l) => l.retroativo), (l) => l.subtotal)),
     valorPotencial: round2(potencial),
     total: round2(soma(linhas, (l) => l.subtotal)),
@@ -259,6 +278,7 @@ export function interpretarTurno(s) {
   const t = semAcento(s);
   if (['diurno', 'd', 'dia', 'diurna', 'manha'].includes(t)) return 'diurno';
   if (['noturno', 'n', 'noite', 'noturna'].includes(t)) return 'noturno';
+  if (['24h', '24', '24 h', '24 horas', '24hs', 'plantao 24h'].includes(t)) return '24h';
   return null;
 }
 
@@ -275,7 +295,7 @@ export function interpretarImportacao(linhas, profissionais) {
     const prof = profissionais.find((p) => semAcento(p.nome) === chave);
     const erros = [];
     if (!data) erros.push('data inválida');
-    if (!turno) erros.push('turno inválido (use Diurno ou Noturno)');
+    if (!turno) erros.push('turno inválido (use Diurno, Noturno ou 24h)');
     if (!prof) erros.push(`profissional "${cProf || ''}" não encontrado`);
     let tipo = prof && prof.categoria === 'fixo' ? 'fixo' : 'cobertura';
     if (cTipo && semAcento(cTipo).startsWith('cob')) tipo = 'cobertura';

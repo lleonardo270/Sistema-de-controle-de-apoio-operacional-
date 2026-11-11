@@ -262,6 +262,25 @@ export function valorPorExtenso(v) {
   return s || 'zero real';
 }
 
+// ---------- CPF ----------
+export const soDigitos = (s) => String(s || '').replace(/\D/g, '');
+
+export function cpfValido(cpf) {
+  const d = soDigitos(cpf);
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  for (const t of [9, 10]) {
+    let soma = 0;
+    for (let i = 0; i < t; i++) soma += Number(d[i]) * (t + 1 - i);
+    if (((soma * 10) % 11) % 10 !== Number(d[t])) return false;
+  }
+  return true;
+}
+
+export function fmtCPF(cpf) {
+  const d = soDigitos(cpf).slice(0, 11);
+  return d.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+}
+
 // ---------- Importação de planilha (CSV) ----------
 export function parseCSV(texto) {
   const linhas = String(texto || '').split(/\r?\n/).filter((l) => l.trim());
@@ -308,7 +327,7 @@ export function interpretarTurno(s) {
   return null;
 }
 
-/** Converte linhas CSV [data, turno, profissional (nome completo), tipo?] em plantões. */
+/** Converte linhas CSV [data, turno, profissional (nome completo ou CPF), tipo?] em plantões. */
 export function interpretarImportacao(linhas, profissionais) {
   const resultado = [];
   linhas.forEach((cols, idx) => {
@@ -318,7 +337,8 @@ export function interpretarImportacao(linhas, profissionais) {
     const data = interpretarData(cData);
     const turno = interpretarTurno(cTurno);
     const chave = semAcento(cProf);
-    const prof = profissionais.find((p) => semAcento(p.nome) === chave);
+    const dig = soDigitos(cProf);
+    const prof = profissionais.find((p) => semAcento(p.nome) === chave || (dig.length === 11 && soDigitos(p.cpf) === dig));
     const erros = [];
     if (!data) erros.push('data inválida');
     if (!turno) erros.push('turno inválido (use Diurno, Noturno, 24h ou 24h 19h)');

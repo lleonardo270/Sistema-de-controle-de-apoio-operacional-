@@ -1,7 +1,7 @@
 import {
   MESES, VALORES_PADRAO, LIMIAR_ELEGIBILIDADE, fmtBRL, valorUnitario, hojeISO, fmtData, diaSemana,
   mesDe, somarMeses, mesAnterior, nomeMes, diasDoMes, parseISO, toISO, quintoDiaUtil, calcularExtrato,
-  compararPlantoes, round2, semAcento, pesoTurno, plantoesConflitam, periodosOcupados, HORARIO_TURNO, parseCSV, interpretarImportacao,
+  compararPlantoes, round2, semAcento, cpfValido, fmtCPF, soDigitos, pesoTurno, plantoesConflitam, periodosOcupados, HORARIO_TURNO, parseCSV, interpretarImportacao,
 } from './calc.js';
 import * as store from './store.js';
 import {
@@ -798,7 +798,7 @@ function formImportacao() {
 03/09/2026;Diurno;Maria Souza;Fixo
 05/09/2026;Noturno;Maria Souza;
 08/09/2026;Diurno;João Lima;Cobertura</pre>
-      <p class="dica">Profissional deve ser o nome completo, igual ao cadastro. Turno: <code>Diurno</code>, <code>Noturno</code>,
+      <p class="dica">Profissional pode ser o nome completo (igual ao cadastro) ou o CPF. Turno: <code>Diurno</code>, <code>Noturno</code>,
       <code>24h</code> (início 07h) ou <code>24h 19h</code> (início 19h). A coluna Tipo é opcional.</p>
       <label>Arquivo <input type="file" id="imp-arq" accept=".csv,.txt,text/csv"></label>
       <label>…ou cole o conteúdo aqui <textarea id="imp-txt" rows="5"></textarea></label>
@@ -862,7 +862,7 @@ function pgProfissionais() {
         <span>${chip(NOME_CATEGORIA[p.categoria], p.categoria === 'fixo' ? 'info' : 'neutro')}
           ${p.categoria === 'fixo' ? chip(`${NOME_MODALIDADE[p.modalidade]} · ${fmtBRL(valorUnitario(p.modalidade, D.config.valores))}`) : chip('Somente refeições', 'neutro')}
           ${p.termoAceitoEm ? '' : chip('Termo pendente', 'alerta')}</span>
-        <span class="dica">${p.pix ? `Pix: ${esc(p.pix)}` : 'Chave Pix não informada'}${p.coren ? ` · COREN ${esc(p.coren)}` : ''}</span>
+        <span class="dica">${p.cpf ? `CPF ${fmtCPF(p.cpf)}` : 'CPF não informado'} · ${p.pix ? `Pix: ${esc(p.pix)}` : 'Chave Pix não informada'}${p.coren ? ` · COREN ${esc(p.coren)}` : ''}</span>
       </div>
       <div class="item-acoes">
         <button type="button" class="btn-icone" data-act="termo-prof" data-id="${p.id}" aria-label="Termo de ciência (PDF)" title="Termo (PDF)">📄</button>
@@ -883,6 +883,7 @@ function formProfissional(p) {
   const corpo = `
     <form class="form" id="f-prof">
       <label>Nome completo <input name="nome" required maxlength="100" value="${esc(p0.nome || '')}"></label>
+      <label>CPF <input name="cpf" required inputmode="numeric" maxlength="14" placeholder="000.000.000-00" value="${p0.cpf ? fmtCPF(p0.cpf) : ''}"></label>
       <label>Chave Pix <input name="pix" required maxlength="120" autocomplete="off" autocapitalize="off" placeholder="CPF, celular, e-mail ou chave aleatória" value="${esc(p0.pix || '')}"></label>
       <label>COREN <small>(opcional)</small> <input name="coren" maxlength="30" autocapitalize="characters" placeholder="Ex.: COREN-SP 123456-TE" value="${esc(p0.coren || '')}"></label>
       <fieldset class="segmentado"><legend>Categoria</legend>
@@ -922,8 +923,9 @@ function formProfissional(p) {
       el.querySelector('#box-opcao').hidden = !precisaOpcao;
       f.opcao.required = precisaOpcao;
       el.querySelector('#txt-opcao').innerHTML = 'Aceite prévio: ' + textoOpcaoTransporte(D.config, { nome: f.nome.value.trim() });
-      el.querySelector('#termo-prof').innerHTML = termoProfissional(D.config, { nome: f.nome.value.trim(), pix: f.pix.value.trim(), coren: f.coren.value.trim() });
+      el.querySelector('#termo-prof').innerHTML = termoProfissional(D.config, { nome: f.nome.value.trim(), cpf: f.cpf.value, pix: f.pix.value.trim(), coren: f.coren.value.trim() });
     }
+    f.cpf.addEventListener('input', () => { f.cpf.value = fmtCPF(f.cpf.value); });
     f.addEventListener('input', sync);
     f.addEventListener('change', sync);
     sync();
@@ -943,11 +945,14 @@ function formProfissional(p) {
     f.addEventListener('submit', (e) => {
       e.preventDefault();
       const nome = f.nome.value.trim().replace(/\s+/g, ' ');
+      const cpf = soDigitos(f.cpf.value);
       const pix = f.pix.value.trim();
       const coren = f.coren.value.trim().toUpperCase();
       const categoria = valorRadio('categoria');
       const modalidade = categoria === 'fixo' ? valorRadio('modalidade') : null;
       if (nome.split(' ').length < 2) return toast('Informe o nome completo.', 'erro');
+      if (!cpfValido(cpf)) return toast('CPF inválido. Confira os números.', 'erro');
+      if (D.profissionais.some((x) => x.id !== p?.id && x.cpf === cpf)) return toast('Já existe profissional com este CPF.', 'erro');
       if (!pix) return toast('Informe a chave Pix.', 'erro');
       if (D.profissionais.some((x) => x.id !== p?.id && semAcento(x.nome) === semAcento(nome))) return toast('Já existe profissional com este nome.', 'erro');
       if (!p0.termoAceitoEm && !f.termo.checked) return toast('É necessário registrar a ciência do termo.', 'erro');
@@ -955,7 +960,7 @@ function formProfissional(p) {
 
       const agora = new Date().toISOString();
       const dados = {
-        nome, pix, coren, categoria, modalidade,
+        nome, cpf, pix, coren, categoria, modalidade,
         termoAceitoEm: p0.termoAceitoEm || agora,
         opcaoTransporteEm: modalidade === 'transporte' ? (f.opcao.required ? agora : p0.opcaoTransporteEm) : null,
         ativo: novo ? true : f.ativo.checked,
@@ -1232,7 +1237,7 @@ document.addEventListener('click', (e) => {
 function formTexto(chave) {
   const def = TEXTOS_PADRAO[chave];
   // Exemplo para a pré-visualização
-  const exProf = D.profissionais.find((p) => p.ativo !== false) || { nome: 'Nome do Profissional', pix: 'chave@exemplo.com', coren: 'COREN-SP 000000-TE' };
+  const exProf = D.profissionais.find((p) => p.ativo !== false) || { nome: 'Nome do Profissional', cpf: '52998224725', pix: 'chave@exemplo.com', coren: 'COREN-SP 000000-TE' };
   const exExt = { total: 120, mes: mesAnterior(mesDe(hojeISO())), plantoesFixos: 4, dataLimite: quintoDiaUtil(mesAnterior(mesDe(hojeISO()))) };
   const campos = montarCampos(D.config, exProf, exExt);
   modal(esc(def.titulo), `
@@ -1357,7 +1362,7 @@ function docExtrato(ext, anexo = false) {
   return `
   <article class="doc">
     ${docCabecalho(`Extrato de Apoio Voluntário${anexo ? ' (anexo)' : ''}`, `Mês de referência: <strong>${nomeMes(ext.mes)}</strong>`)}
-    <p class="doc-linha">Profissional: <strong>${esc(p.nome)}</strong>${p.coren ? ` · COREN ${esc(p.coren)}` : ''} · Categoria: ${NOME_CATEGORIA[p.categoria]} · Modalidade: ${modalidades}</p>
+    <p class="doc-linha">Profissional: <strong>${esc(p.nome)}</strong>${p.cpf ? ` · CPF ${fmtCPF(p.cpf)}` : ''} · Categoria: ${NOME_CATEGORIA[p.categoria]} · Modalidade: ${modalidades}</p>
     <table class="doc-tabela">
       <thead><tr><th>Data</th><th>Turno</th><th>Status do plantão</th><th>Valor unitário</th><th>Subtotal</th></tr></thead>
       <tbody>${ext.linhas.map((l) => `
@@ -1392,10 +1397,10 @@ function docRecibo(ext) {
     ${docCabecalho('Recibo de Apoio Voluntário', 'Ajuda de Custo Indenizatória – Alimentação e Transporte')}
     <div class="doc-valor">${fmtBRL(ext.total)}</div>
     <div class="doc-texto">${textoRecibo(D.config, p, ext)}</div>
-    <p class="doc-linha">${p.pix ? `Chave Pix do(a) profissional: ${esc(p.pix)}` : ''}${r ? `${p.pix ? ' · ' : ''}Forma do repasse: ${esc(r.forma)}${r.obs ? ' · ' + esc(r.obs) : ''}` : ''}</p>
+    ${r ? `<p class="doc-linha">Forma do repasse: ${esc(r.forma)}${r.obs ? ' · ' + esc(r.obs) : ''}</p>` : ''}
     <p class="doc-local">${esc(local)}, ${data}.</p>
     <div class="doc-assinaturas">
-      <div><span></span>${esc(p.nome)}<br><small>Profissional${p.coren ? ` · COREN ${esc(p.coren)}` : ''}</small></div>
+      <div><span></span>${esc(p.nome)}<br><small>CPF ${p.cpf ? fmtCPF(p.cpf) : '___.___.___-__'}</small></div>
       <div><span></span>Família Colaboradora<br><small>${esc(D.config.familia || '')}</small></div>
     </div>
     <p class="doc-nota">Confirmação digital (opcional): ( ) Recebido e conferido via mensagem em ___/___/______.</p>
@@ -1413,7 +1418,7 @@ function docTermo(p) {
     </div>
     <p class="doc-local">${esc(D.config.cidade || '____________________')}, ${p.termoAceitoEm ? dataPorExtenso(p.termoAceitoEm.slice(0, 10)) : '____ de ____________ de ______'}.</p>
     <div class="doc-assinaturas">
-      <div><span></span>${esc(p.nome)}${p.coren ? `<br><small>COREN ${esc(p.coren)}</small>` : ''}</div>
+      <div><span></span>${esc(p.nome)}<br><small>CPF ${p.cpf ? fmtCPF(p.cpf) : '___.___.___-__'}</small></div>
       <div><span></span>Família Colaboradora<br><small>${esc(D.config.familia || '')}</small></div>
     </div>
   </article>`;

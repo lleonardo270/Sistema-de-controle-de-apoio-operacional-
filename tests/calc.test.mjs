@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import {
   calcularExtrato, quintoDiaUtil, valorPorExtenso, fmtBRL, valorUnitario,
   parseCSV, interpretarImportacao, interpretarData, pascoa, toISO,
-  plantoesConflitam, periodosOcupados, interpretarTurno, compararPlantoes,
+  plantoesConflitam, periodosOcupados, interpretarTurno, compararPlantoes, cpfValido, fmtCPF,
 } from '../js/calc.js';
 
-const fixo = { id: 'a', nome: 'Maria Souza', pix: 'maria@ex.com', categoria: 'fixo', modalidade: 'integral' };
+const fixo = { id: 'a', nome: 'Maria Souza', cpf: '52998224725', pix: 'maria@ex.com', categoria: 'fixo', modalidade: 'integral' };
 const cob = { id: 'b', nome: 'João Lima', pix: '11999990000', categoria: 'cobertura', modalidade: null };
 const pl = (profissionalId, data, turno = 'diurno', tipo = 'fixo', modalidade = 'integral') => ({
   profissionalId, data, turno, tipo, modalidade, valorUnitario: tipo === 'fixo' ? valorUnitario(modalidade) : 0,
@@ -163,4 +163,13 @@ test('turnos na planilha e ordenação', () => {
   assert.equal(interpretarTurno('24h noite'), '24h19');
   const ord = [{ data: '2026-10-01', turno: '24h19' }, { data: '2026-10-01', turno: 'diurno' }].sort(compararPlantoes);
   assert.deepEqual(ord.map((x) => x.turno), ['diurno', '24h19']);
+});
+
+test('CPF: validação, formatação e importação pelo CPF', () => {
+  assert.equal(cpfValido('529.982.247-25'), true);
+  assert.equal(cpfValido('529.982.247-24'), false);
+  assert.equal(cpfValido('111.111.111-11'), false);
+  assert.equal(fmtCPF('52998224725'), '529.982.247-25');
+  const r = interpretarImportacao(parseCSV('01/09/2026;Diurno;529.982.247-25'), [fixo, cob]);
+  assert.equal(r[0].profissional.id, 'a');
 });

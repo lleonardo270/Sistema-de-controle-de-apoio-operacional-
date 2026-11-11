@@ -303,3 +303,29 @@ select { min-height: 46px; }
 .termo-box code { background: #e8efed; padding: 1px 5px; border-radius: 4px; }
 .pix-linha { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #fff; border: 1.5px solid var(--borda); border-radius: 12px; padding: 8px 8px 8px 12px; margin-bottom: 12px; font-size: .92rem; word-break: break-all; }
 .btn.pequeno { min-height: 36px; padding: 6px 14px; font-size: .88rem; }
+
+/* ---------- Turno 24h e seleção múltipla ---------- */
+.chip.t24 { background: #fde7f3; color: #9d174d; }
+.segmentado.turnos { display: grid; grid-template-columns: 1fr 1fr; }
+.segmentado.turnos legend { grid-column: 1 / -1; }
+.turno-nota { grid-column: 1 / -1; margin: 0; }
+.seg span small { display: block; font-size: .72rem; font-weight: 500; color: var(--suave); }
+.seg input:checked + span small { color: var(--pri-esc); }
+.seg span { flex-direction: column; line-height: 1.2; }
+.cal-dia small { font-size: .58rem; letter-spacing: -.02em; }
+
+.barra-selecao {
+  position: sticky; top: calc(env(safe-area-inset-top) + 58px); z-index: 5;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  background: #fff7ed; border: 1.5px solid #fed7aa; border-radius: 12px; padding: 8px 10px; margin-bottom: 12px;
+}
+.barra-selecao > span { flex: 1 1 100%; font-size: .92rem; }
+.barra-selecao .btn { flex: 1 1 auto; }
+.modo-selecao .item { cursor: pointer; user-select: none; }
+.item.marcado { background: #fff1f2; }
+.caixa {
+  flex: 0 0 26px; height: 26px; border-radius: 7px; border: 2px solid #cbd5d1; background: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 800; color: #fff;
+}
+.item.marcado .caixa { background: var(--erro); border-color: var(--erro); }
+@media (min-width: 640px) { .barra-selecao > span { flex: 1 1 auto; } }
